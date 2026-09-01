@@ -283,6 +283,19 @@ namespace DimensionSync.GameTests
                 + "the only one that can tell whether a drag behaves like a typed "
                 + "number. Skipped unless the run owns the display.");
 
+            yield return New("pwings_span_runs_along_local_x", SpanRunsAlongLocalX,
+                "A measurement of B9, not of this mod: which of a wing's own axes its "
+                + "SPAN runs along. The conformance rules assume local x, and an "
+                + "assumption that decides where every station on a wing lies is worth "
+                + "holding to a measurement.");
+
+            yield return New("pwings_demo_child_length_follows_parent_length",
+                DemoChildLengthFollowsParentLength,
+                "The preferred answer to the parent-length case: the child should keep "
+                + "its parent's edge angles by SHORTENING, not by narrowing its tip. "
+                + "Both keep the angles, so the collinearity test cannot tell them "
+                + "apart - this one names which was wanted.");
+
             yield return New("pwings_demo_parent_length_carries_to_child",
                 DemoParentLengthCarriesToChild,
                 "A craft the player built and reported: symmetric wings, each with a "
@@ -2775,6 +2788,121 @@ namespace DimensionSync.GameTests
                               Mathf.Abs(chordAfter - chordBefore) > 0.01f);
             context.Check("and left its span alone", spanAfter, spanBefore, 1e-3f);
             context.CheckTrue("the wing is still attached", wing.parent == fuselage);
+        }
+
+        /// <summary>
+        /// B9 builds a wing's span along its own local x.
+        /// </summary>
+        /// <remarks>
+        /// The conformance rules take this for granted everywhere they turn a position
+        /// on a wing into a station along it, and getting it wrong would not fail
+        /// loudly - it would put every station in the wrong place while every value
+        /// still looked plausible. It was assumed from how the rest of the code reads
+        /// rather than measured, which is exactly the kind of thing this suite exists
+        /// to settle.
+        ///
+        /// Measured by changing the span and watching which local axis the geometry
+        /// actually grows along, rather than by reading a field: a field only says what
+        /// B9 was told, and the question is what B9 did.
+        /// </remarks>
+        private static IEnumerator SpanRunsAlongLocalX(TestContext context)
+        {
+            if (EditorBuilder.FindPart(PWing) == null)
+            {
+                context.Skip("B9 Procedural Wings is not installed");
+                yield break;
+            }
+
+            Part wing = EditorBuilder.Spawn(PWing);
+            if (wing == null) { context.Skip("parts unavailable"); yield break; }
+            yield return context.Frames(8);
+
+            EditorBuilder.SetRoot(wing);
+            PartFields.Set(wing, PWingModule, "sharedBaseWidthRoot", 2f, WriteMode.DirectAssignment);
+            PartFields.Set(wing, PWingModule, "sharedBaseWidthTip", 2f, WriteMode.DirectAssignment);
+            PartFields.Set(wing, PWingModule, "sharedBaseLength", 2f, WriteMode.DirectAssignment);
+            yield return context.Settled();
+
+            Vector3 shortSides = LocalExtentOf(wing);
+            PartFields.Set(wing, PWingModule, "sharedBaseLength", 6f, WriteMode.DirectAssignment);
+            yield return context.Settled();
+            Vector3 longSides = LocalExtentOf(wing);
+
+            Vector3 grew = longSides - shortSides;
+            Harness.Log($"SPANAXIS extent at span 2 {shortSides}, at span 6 {longSides}, " +
+                        $"grew by {grew}");
+
+            // Four metres of extra span has to appear on one axis and nowhere else.
+            context.Check("the span grew along local x", grew.x, 4f, 0.3f);
+            context.CheckTrue($"and not along local y (grew {grew.y:F3})", Mathf.Abs(grew.y) < 0.3f);
+            context.CheckTrue($"nor along local z (grew {grew.z:F3})", Mathf.Abs(grew.z) < 0.3f);
+        }
+
+        /// <summary>How far a part's drawn geometry reaches along each of its own axes.</summary>
+        private static Vector3 LocalExtentOf(Part part)
+        {
+            var box = new Bounds(Vector3.zero, Vector3.zero);
+            bool any = false;
+            foreach (Renderer renderer in part.GetComponentsInChildren<Renderer>())
+            {
+                if (!renderer.enabled || renderer is ParticleSystemRenderer) continue;
+                MeshFilter filter = renderer.GetComponent<MeshFilter>();
+                if (filter?.sharedMesh == null) continue;
+
+                // Every vertex carried back into the PART's own frame, because a child
+                // mesh can be turned relative to it and world-space bounds would answer
+                // a question about the editor's axes rather than the wing's.
+                foreach (Vector3 vertex in filter.sharedMesh.vertices)
+                {
+                    Vector3 local = part.transform.InverseTransformPoint(
+                        renderer.transform.TransformPoint(vertex));
+                    if (!any) { box = new Bounds(local, Vector3.zero); any = true; }
+                    else box.Encapsulate(local);
+                }
+            }
+            return any ? box.size : Vector3.zero;
+        }
+
+        /// <summary>
+        /// A child wing keeps its parent's edge angles by shortening, not by narrowing.
+        /// </summary>
+        /// <remarks>
+        /// Both answers hold the angles, so pwings_demo_parent_length_carries_to_child
+        /// passes either way. This one records which of them was actually wanted: the
+        /// child's own planform is the player's, and reshaping its tip to hold an angle
+        /// changes a wing they did not touch.
+        /// </remarks>
+        private static IEnumerator DemoChildLengthFollowsParentLength(TestContext context)
+        {
+            var rig = new DemoRig();
+            yield return BuildDemoRig(context, rig);
+            if (!rig.Ok) yield break;
+
+            float childSpanBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseLength");
+            float childTipBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseWidthTip");
+            float childOffsetBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseOffsetTip");
+
+            yield return context.Say("Shortening the parent wing from 4 m to 3 m.",
+                                     "The child has to keep the parent's edge angles. The way it "
+                                     + "should do that is by getting shorter, leaving the planform "
+                                     + "the player drew for it otherwise alone.");
+
+            PartFields.Set(rig.Parent, PWingModule, "sharedBaseLength", 3f, WriteMode.DirectAssignment);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float childSpanAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseLength");
+            float childTipAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseWidthTip");
+            float childOffsetAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseOffsetTip");
+            Harness.Log($"DEMOPREF child span {childSpanBefore:F3} -> {childSpanAfter:F3}, " +
+                        $"tip {childTipBefore:F3} -> {childTipAfter:F3}, " +
+                        $"tipOffset {childOffsetBefore:F3} -> {childOffsetAfter:F3}");
+
+            context.CheckTrue($"the child was shortened ({childSpanBefore:F3} -> {childSpanAfter:F3})",
+                              Mathf.Abs(childSpanAfter - childSpanBefore) > 0.01f);
+            context.Check("and kept the tip chord the player gave it",
+                          childTipAfter, childTipBefore, 0.01f);
+            context.Check("and kept its tip offset", childOffsetAfter, childOffsetBefore, 0.01f);
         }
 
         /// <summary>The wings and flaps of the player's demo craft, sorted out by role.</summary>
