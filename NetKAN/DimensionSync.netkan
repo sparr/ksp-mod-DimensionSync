@@ -1,0 +1,29 @@
+{
+    "spec_version"   : "v1.4",
+    "identifier"     : "DimensionSync",
+    "name"           : "Dimension Sync",
+    "$kref"          : "#/ckan/github/sparr/ksp-mod-DimensionSync",
+    "$vref"          : "#/ckan/ksp-avc",
+    "abstract"       : "Keeps the dimensions of connected parts in step: resize one procedural part and the change travels along the stack, or from one wing segment's tip to the next segment's root.",
+    "author"         : "sparr",
+    "license"        : "MIT",
+    "release_status" : "development",
+    "resources": {
+        "repository" : "https://github.com/sparr/ksp-mod-DimensionSync",
+        "bugtracker" : "https://github.com/sparr/ksp-mod-DimensionSync/issues"
+    },
+    "recommends": [
+        { "name": "ModuleManager" }
+    ],
+    "suggests": [
+        { "name": "ProceduralParts" },
+        { "name": "ProceduralFairings" },
+        { "name": "B9-PWings-Fork" }
+    ],
+    "install": [
+        {
+            "find"       : "DimensionSync",
+            "install_to" : "GameData"
+        }
+    ]
+}

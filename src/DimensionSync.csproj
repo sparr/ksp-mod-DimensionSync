@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- this is what's called an "sdk-style project" -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <!-- Since KSP uses .NET 4.8 -->
+    <PropertyGroup>
+        <!-- THIS is where the .NET version you'll actually use gets specified. -->
+        <TargetFramework>net4.8</TargetFramework>
+        <LangVersion>9</LangVersion>
+        <!-- per https://gist.github.com/gotmachine/d973adcb9ae413386291170fa346d043 for debugging setup -->
+        <DebugType>portable</DebugType>
+        <DebugSymbols>true</DebugSymbols>
+        <Optimize>false</Optimize>
+    </PropertyGroup>
+
+    <!-- Publication metadata. Version drives the assembly attributes, the
+         [KSPAssembly] attribute KSPBuildTools emits, and the VERSION field of
+         the .version file below, so bumping it here is the only edit a release
+         needs. -->
+    <PropertyGroup>
+        <Version>0.1.0</Version>
+        <Product>DimensionSync</Product>
+        <Authors>Clarence "Sparr" Risher</Authors>
+        <Company>Clarence "Sparr" Risher</Company>
+        <Copyright>Copyright (c) 2026 Clarence "Sparr" Risher</Copyright>
+        <Description>Keeps the dimensions of connected parts in step in the KSP editor.</Description>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <RepositoryUrl>https://github.com/sparr/ksp-mod-DimensionSync</RepositoryUrl>
+    </PropertyGroup>
+
+    <!-- Plugin DLLs go in GameData/<Mod>/Plugins/, which is what essentially
+         every published plugin mod does. -->
+    <PropertyGroup>
+        <KSPBT_ModPluginFolder>Plugins</KSPBT_ModPluginFolder>
+    </PropertyGroup>
+
+    <!-- include KSPBuildTools - see below -->
+    <ItemGroup>
+        <PackageReference Include="KSPBuildTools" Version="1.1.1"></PackageReference>
+    </ItemGroup>
+
+    <!-- The KSP-AVC / CKAN version file, rewritten in place on every build.
+         NAME, VERSION and the three KSP_VERSION* fields come from here, so they
+         cannot drift from the assembly; the GitHub coordinates and the URLs live
+         in the file itself and are left alone.
+
+         The KSP range says what has actually been tested. KSPBuildTools would
+         otherwise default KSP_Version_Min to 1.8, which is a wider claim than
+         anyone has checked. Widen it here once you have. -->
+    <ItemGroup>
+        <KSPVersionFile Include="../GameData/DimensionSync/DimensionSync.version">
+            <Name>DimensionSync</Name>
+            <Destination>../GameData/DimensionSync/DimensionSync.version</Destination>
+            <KSP_Version>1.12.5</KSP_Version>
+            <KSP_Version_Min>1.12.0</KSP_Version_Min>
+            <KSP_Version_Max>1.12.99</KSP_Version_Max>
+        </KSPVersionFile>
+    </ItemGroup>
+
+    <!-- Ship the licence, readme and changelog inside the mod folder, which is
+         what published mods do: a player who unzips into GameData never sees the
+         repository. Copied rather than duplicated so there is one source. -->
+    <ItemGroup>
+        <KSPModDocs Include="../LICENSE;../README.md;../CHANGELOG.md" />
+    </ItemGroup>
+    <Target Name="DimensionSync_CopyDocs" AfterTargets="Build">
+        <Copy SourceFiles="@(KSPModDocs)" DestinationFolder="$(KSPBT_ModRoot)"
+              SkipUnchangedFiles="true" Condition="Exists('%(KSPModDocs.Identity)')" />
+    </Target>
+</Project>
