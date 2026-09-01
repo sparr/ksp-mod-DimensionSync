@@ -289,12 +289,13 @@ namespace DimensionSync.GameTests
                 + "assumption that decides where every station on a wing lies is worth "
                 + "holding to a measurement.");
 
-            yield return New("pwings_demo_child_length_follows_parent_length",
-                DemoChildLengthFollowsParentLength,
-                "The preferred answer to the parent-length case: the child should keep "
-                + "its parent's edge angles by SHORTENING, not by narrowing its tip. "
-                + "Both keep the angles, so the collinearity test cannot tell them "
-                + "apart - this one names which was wanted.");
+            yield return New("pwings_demo_child_spends_the_cheapest_dimensions",
+                DemoChildSpendsTheCheapestDimensions,
+                "A child made to follow its parent has to pay for it out of the "
+                + "dimensions that matter least. Offset first, then chord, then "
+                + "thickness, and its SPAN only when nothing else will do - so a "
+                + "parent shortened from 4 m to 3 m must not cost the child its span "
+                + "or its thickness.");
 
             yield return New("pwings_demo_parent_length_carries_to_child",
                 DemoParentLengthCarriesToChild,
@@ -2864,45 +2865,69 @@ namespace DimensionSync.GameTests
         }
 
         /// <summary>
-        /// A child wing keeps its parent's edge angles by shortening, not by narrowing.
+        /// A child follows its parent by spending its least important dimensions.
         /// </summary>
         /// <remarks>
-        /// Both answers hold the angles, so pwings_demo_parent_length_carries_to_child
-        /// passes either way. This one records which of them was actually wanted: the
-        /// child's own planform is the player's, and reshaping its tip to hold an angle
-        /// changes a wing they did not touch.
+        /// The order a child wing is allowed to be changed in, cheapest first: its tip
+        /// OFFSET, then its tip CHORD, then its THICKNESS, and its SPAN only when
+        /// nothing else will do. The span is the one the player is most likely to have
+        /// chosen deliberately - it is where the wing reaches to - and the offset is
+        /// the one they are least likely to notice.
+        ///
+        /// Holding the edges collinear is checked by
+        /// pwings_demo_parent_length_carries_to_child. This one checks what that
+        /// collinearity was paid for with, which the angles alone cannot show: the same
+        /// angles can be reached by shortening the child or by reshaping its tip, and
+        /// only one of those leaves the planform the player drew intact.
+        ///
+        /// Two collinear edges are two constraints and the tip has exactly two free
+        /// numbers, so on THIS craft the chord and the offset both have to move and
+        /// there is no slack for the ordering to show in. What the ordering forbids
+        /// here is reaching past them to the thickness or the span.
         /// </remarks>
-        private static IEnumerator DemoChildLengthFollowsParentLength(TestContext context)
+        private static IEnumerator DemoChildSpendsTheCheapestDimensions(TestContext context)
         {
             var rig = new DemoRig();
             yield return BuildDemoRig(context, rig);
             if (!rig.Ok) yield break;
 
-            float childSpanBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseLength");
-            float childTipBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseWidthTip");
-            float childOffsetBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseOffsetTip");
+            float spanBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseLength");
+            float thickRootBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessRoot");
+            float thickTipBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessTip");
+            float tipBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseWidthTip");
+            float offsetBefore = PartFields.Get(rig.Child, PWingModule, "sharedBaseOffsetTip");
 
             yield return context.Say("Shortening the parent wing from 4 m to 3 m.",
-                                     "The child has to keep the parent's edge angles. The way it "
-                                     + "should do that is by getting shorter, leaving the planform "
-                                     + "the player drew for it otherwise alone.");
+                                     "The child has to keep the parent's edge angles. What it must "
+                                     + "not do is buy them with its span or its thickness while its "
+                                     + "tip chord and offset were available to spend.");
 
             PartFields.Set(rig.Parent, PWingModule, "sharedBaseLength", 3f, WriteMode.DirectAssignment);
             yield return context.Settled();
             EditorBuilder.PresentShip();
 
-            float childSpanAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseLength");
-            float childTipAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseWidthTip");
-            float childOffsetAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseOffsetTip");
-            Harness.Log($"DEMOPREF child span {childSpanBefore:F3} -> {childSpanAfter:F3}, " +
-                        $"tip {childTipBefore:F3} -> {childTipAfter:F3}, " +
-                        $"tipOffset {childOffsetBefore:F3} -> {childOffsetAfter:F3}");
+            float spanAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseLength");
+            float thickRootAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessRoot");
+            float thickTipAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessTip");
+            float tipAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseWidthTip");
+            float offsetAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseOffsetTip");
+            Harness.Log($"DEMOCOST child span {spanBefore:F3} -> {spanAfter:F3}, " +
+                        $"thickness {thickRootBefore:F3}/{thickTipBefore:F3} -> " +
+                        $"{thickRootAfter:F3}/{thickTipAfter:F3}, " +
+                        $"tip {tipBefore:F3} -> {tipAfter:F3}, " +
+                        $"tipOffset {offsetBefore:F3} -> {offsetAfter:F3}");
 
-            context.CheckTrue($"the child was shortened ({childSpanBefore:F3} -> {childSpanAfter:F3})",
-                              Mathf.Abs(childSpanAfter - childSpanBefore) > 0.01f);
-            context.Check("and kept the tip chord the player gave it",
-                          childTipAfter, childTipBefore, 0.01f);
-            context.Check("and kept its tip offset", childOffsetAfter, childOffsetBefore, 0.01f);
+            context.Check($"the child kept its span ({spanBefore:F3})", spanAfter, spanBefore, 0.01f);
+            context.Check("and its root thickness", thickRootAfter, thickRootBefore, 0.01f);
+            context.Check("and its tip thickness", thickTipAfter, thickTipBefore, 0.01f);
+
+            // Said out loud rather than left implied: the angles were held, and these
+            // are the two dimensions it was allowed to spend to hold them.
+            context.CheckTrue($"and paid with its tip chord or offset "
+                              + $"(chord {tipBefore:F3} -> {tipAfter:F3}, "
+                              + $"offset {offsetBefore:F3} -> {offsetAfter:F3})",
+                              Mathf.Abs(tipAfter - tipBefore) > 0.001f
+                              || Mathf.Abs(offsetAfter - offsetBefore) > 0.001f);
         }
 
         /// <summary>The wings and flaps of the player's demo craft, sorted out by role.</summary>
