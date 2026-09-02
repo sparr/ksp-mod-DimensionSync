@@ -491,6 +491,44 @@ namespace DimensionSync
             float widthTip = tipLead - tipTrail;
             float offsetTip = -(tipLead + tipTrail) / 2f;
 
+            // With only ONE edge collinear there is a spare degree of freedom, and it
+            // is spent on the cheapest dimension rather than on the chord.
+            //
+            // Two collinear edges are two constraints against a tip's two numbers, so
+            // the chord and the offset are both pinned and there is nothing to choose.
+            // One collinear edge is one constraint, and the offset alone can meet it:
+            // moving it shifts both edges together, which is exactly what turning the
+            // whole tip about the root does. Solving both numbers anyway costs the
+            // child its tip chord to hold an angle on an edge that was never lined up
+            // with anything - on a cranked planform that halves a tip the player chose
+            // and never asked to have changed.
+            bool bothLinedUp = was.Leading && was.Trailing;
+            if (!bothLinedUp)
+            {
+                float keepWidth = Read(child, "sharedBaseWidthTip");
+                if (!float.IsNaN(keepWidth))
+                {
+                    // Solved from whichever edge has a line to hold.
+                    float target = was.Leading ? tipLead : tipTrail;
+                    float wanted = was.Leading
+                        ? keepWidth / 2f - target
+                        : -keepWidth / 2f - target;
+
+                    // The offset is spent first, but only as far as B9 will carry it.
+                    // Past that the chord has to make up the rest, which is the next
+                    // dimension along and still cheaper than the span.
+                    float limited = wanted;
+                    if (LimitsOf(child, "sharedBaseOffsetTip", out float low, out float high)
+                        && !float.IsNaN(low) && !float.IsNaN(high))
+                        limited = Mathf.Clamp(wanted, low, high);
+
+                    widthTip = Mathf.Abs(limited - wanted) <= 1e-5f
+                        ? keepWidth
+                        : (was.Leading ? 2f * (target + limited) : -2f * (target + limited));
+                    offsetTip = limited;
+                }
+            }
+
             // The taper runs out INSIDE this segment: the two edges, continued at the
             // parent's angles, meet before they reach its tip. Rather than give up -
             // which leaves a kink at the joint and makes the result depend on how big

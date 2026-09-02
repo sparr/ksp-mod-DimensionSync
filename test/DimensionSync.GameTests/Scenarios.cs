@@ -289,6 +289,14 @@ namespace DimensionSync.GameTests
                 + "assumption that decides where every station on a wing lies is worth "
                 + "holding to a measurement.");
 
+            yield return New("pwings_cranked_delta_keeps_its_tip_chord",
+                CrankedDeltaKeepsItsTipChord,
+                "A cranked planform: two panels sharing a straight LEADING edge with a "
+                + "kink in the trailing one. Only the leading edges are lined up, so "
+                + "only they have to be kept lined up - and the spare freedom that "
+                + "leaves should be spent on the outer panel's tip OFFSET rather than "
+                + "on the tip chord the player chose.");
+
             yield return New("pwings_demo_child_spends_the_cheapest_dimensions",
                 DemoChildSpendsTheCheapestDimensions,
                 "A child made to follow its parent has to pay for it out of the "
@@ -2862,6 +2870,119 @@ namespace DimensionSync.GameTests
                 }
             }
             return any ? box.size : Vector3.zero;
+        }
+
+        /// <summary>
+        /// A cranked planform keeps its outer tip chord when only one edge is lined up.
+        /// </summary>
+        /// <remarks>
+        /// Straight leading edge across both panels, kinked trailing edge - the shape
+        /// of a great many real aircraft and of most swept things built in two pieces.
+        /// Only the leading edges are collinear, so only that line has to be held, and
+        /// holding one line takes one number. Spending the tip offset does it; spending
+        /// the tip chord as well costs the player a dimension they chose, to hold an
+        /// angle on an edge that was never lined up with anything.
+        ///
+        /// The trailing edge's own angle does change as a result, and that is the
+        /// intended trade: an edge with no collinearity to preserve is not protected,
+        /// while the tip chord ranks above the offset and is.
+        /// </remarks>
+        private static IEnumerator CrankedDeltaKeepsItsTipChord(TestContext context)
+        {
+            if (EditorBuilder.FindPart(PWing) == null)
+            {
+                context.Skip("B9 Procedural Wings is not installed");
+                yield break;
+            }
+
+            Part fuselage = EditorBuilder.Spawn(PPTank);
+            Part inner = EditorBuilder.Spawn(PWing);
+            Part outer = EditorBuilder.Spawn(PWing);
+            if (fuselage == null || inner == null || outer == null)
+            {
+                context.Skip("parts unavailable");
+                yield break;
+            }
+            yield return context.Frames(8);
+
+            EditorBuilder.SetRoot(fuselage);
+            PartFields.Set(fuselage, PPShapeModule, "diameter", 1.25f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            // Inner: root 3, tip 2, tip offset 0.5. Leading edge slopes, trailing flat.
+            PartFields.Set(inner, PWingModule, "sharedBaseLength", 4f, WriteMode.DirectAssignment);
+            PartFields.Set(inner, PWingModule, "sharedBaseWidthRoot", 3f, WriteMode.DirectAssignment);
+            PartFields.Set(inner, PWingModule, "sharedBaseWidthTip", 2f, WriteMode.DirectAssignment);
+            PartFields.Set(inner, PWingModule, "sharedBaseOffsetTip", 0.5f, WriteMode.DirectAssignment);
+
+            // Outer: root 2 to meet the inner tip, and a tip chord and offset chosen so
+            // the LEADING edges run on as one line while the trailing edges kink.
+            PartFields.Set(outer, PWingModule, "sharedBaseLength", 4f, WriteMode.DirectAssignment);
+            PartFields.Set(outer, PWingModule, "sharedBaseWidthRoot", 2f, WriteMode.DirectAssignment);
+            PartFields.Set(outer, PWingModule, "sharedBaseWidthTip", 1.5f, WriteMode.DirectAssignment);
+            PartFields.Set(outer, PWingModule, "sharedBaseOffsetTip", 0.75f, WriteMode.DirectAssignment);
+            yield return context.Settled();
+
+            if (!EditorBuilder.SurfaceAttach(fuselage, inner, new Vector3(0.625f, 0f, 0f)))
+            {
+                context.Result.Error("could not attach the inner panel");
+                yield break;
+            }
+            yield return context.Settled();
+
+            if (!EditorBuilder.StackBelow(outer, inner) && !EditorBuilder.SurfaceAttach(
+                    inner, outer, new Vector3(4f, 0f, 0f)))
+            {
+                context.Result.Error("could not attach the outer panel to the inner tip");
+                yield break;
+            }
+            fuselage.transform.position += Vector3.up * 10f;
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float innerLead = EdgeAngleOf(inner, trailing: false);
+            float outerLead = EdgeAngleOf(outer, trailing: false);
+            float innerTrail = EdgeAngleOf(inner, trailing: true);
+            float outerTrail = EdgeAngleOf(outer, trailing: true);
+            Harness.Log($"CRANK before: inner lead {innerLead:F3} trail {innerTrail:F3}, " +
+                        $"outer lead {outerLead:F3} trail {outerTrail:F3}");
+
+            // The fixture is only worth anything if it really is cranked.
+            context.Check("the fixture's leading edges start collinear", outerLead, innerLead, 0.5f);
+            context.CheckTrue($"and its trailing edges start kinked "
+                              + $"(inner {innerTrail:F2}, outer {outerTrail:F2})",
+                              Mathf.Abs(outerTrail - innerTrail) > 2f);
+
+            float tipBefore = PartFields.Get(outer, PWingModule, "sharedBaseWidthTip");
+            float spanBefore = PartFields.Get(outer, PWingModule, "sharedBaseLength");
+            float offsetBefore = PartFields.Get(outer, PWingModule, "sharedBaseOffsetTip");
+
+            yield return context.Say("Narrowing the inner panel's tip chord from 2 m to 1.5 m.",
+                                     "The leading edges have to stay one straight line. The outer "
+                                     + "panel should pay for that out of its tip OFFSET and keep "
+                                     + "the tip chord it was given.");
+
+            PartFields.Set(inner, PWingModule, "sharedBaseWidthTip", 1.5f, WriteMode.DirectAssignment);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float tipAfter = PartFields.Get(outer, PWingModule, "sharedBaseWidthTip");
+            float spanAfter = PartFields.Get(outer, PWingModule, "sharedBaseLength");
+            float offsetAfter = PartFields.Get(outer, PWingModule, "sharedBaseOffsetTip");
+            Harness.Log($"CRANK after: inner lead {EdgeAngleOf(inner, false):F3}, " +
+                        $"outer lead {EdgeAngleOf(outer, false):F3}, " +
+                        $"outer tip {tipBefore:F3} -> {tipAfter:F3}, " +
+                        $"span {spanBefore:F3} -> {spanAfter:F3}, " +
+                        $"offset {offsetBefore:F3} -> {offsetAfter:F3}");
+
+            context.Check("the leading edges are still one line",
+                          EdgeAngleOf(outer, trailing: false), EdgeAngleOf(inner, trailing: false), 0.5f);
+            context.Check($"the outer panel kept its tip chord ({tipBefore:F3})",
+                          tipAfter, tipBefore, 0.01f);
+            context.Check("and its span", spanAfter, spanBefore, 0.01f);
+            context.CheckTrue($"paying with its tip offset "
+                              + $"({offsetBefore:F3} -> {offsetAfter:F3})",
+                              Mathf.Abs(offsetAfter - offsetBefore) > 0.01f);
         }
 
         /// <summary>
