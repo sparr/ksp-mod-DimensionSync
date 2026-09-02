@@ -350,6 +350,25 @@ namespace DimensionSync
 
             /// <summary>The trailing edges ran straight through the joint.</summary>
             public bool Trailing;
+
+            /// <summary>
+            /// The two wings' surfaces ran flat through the joint.
+            /// </summary>
+            /// <remarks>
+            /// One flag rather than two, unlike the edges - but not because the two
+            /// surfaces cannot part company. A child rolled about the chord axis can
+            /// have its upper surface run flat through the joint while its lower one
+            /// does not. That joint does not physically mate: the two wings either
+            /// stand apart at the seam or bury one inside the other. For a joint whose
+            /// surfaces actually meet, the thickness is symmetric about the chord plane
+            /// and the two answers agree, so one flag is enough.
+            ///
+            /// The edges are different because they can part company on a joint that
+            /// mates perfectly well: the tip offset slides them together while the
+            /// chord pushes them apart, so a cranked planform is an ordinary shape
+            /// rather than an impossible one.
+            /// </remarks>
+            public bool Coplanar;
         }
 
         /// <summary>
@@ -392,6 +411,7 @@ namespace DimensionSync
                 {
                     Leading = SlopesAgree(parent, child, trailing: false),
                     Trailing = SlopesAgree(parent, child, trailing: true),
+                    Coplanar = ThicknessAgrees(parent, child),
                 };
             }
         }
@@ -442,7 +462,7 @@ namespace DimensionSync
                 if (part == null || !nodes.ContainsKey(part)) continue;
 
                 EdgeMatch was = Straight[part];
-                if (!was.Leading && !was.Trailing) continue;
+                if (!was.Leading && !was.Trailing && !was.Coplanar) continue;
                 if (!driving.Contains(part.parent)) continue;
 
                 PartModule child = FindWingModule(part);
@@ -465,6 +485,12 @@ namespace DimensionSync
         {
             float span = Read(child, "sharedBaseLength");
             if (float.IsNaN(span) || span <= 1e-3f) return false;
+
+            // The surfaces are carried through on their own account. A joint can have
+            // its surfaces running flat through it and its edges kinked, or the other
+            // way about, and each is held only where it was already true.
+            bool movedSurfaces = was.Coplanar && ContinueThickness(parent, child, part, span);
+            if (!was.Leading && !was.Trailing) return movedSurfaces;
 
             // The root follows the tip it is bolted to, which is what makes this
             // cascade: the segment beyond this one is worked out from the tip set
@@ -578,6 +604,69 @@ namespace DimensionSync
         }
 
         /// <summary>
+        /// Carry a wing's surfaces on into the segment bolted to its tip.
+        /// </summary>
+        /// <remarks>
+        /// The thickness counterpart of the edge carry. The child's ROOT thickness has
+        /// already arrived through the thickness channel - that is the joint, and the
+        /// two wings have to be the same thickness where they meet - so what is left is
+        /// its TIP: thinning on from there at the parent's own rate keeps the surfaces
+        /// running flat through the joint instead of kinking at it.
+        ///
+        /// Only where they ran flat through it to begin with. A child deliberately
+        /// built thicker or thinner than the line its parent was on is a shape somebody
+        /// chose, and carrying the parent's rate into it would quietly redraw it.
+        /// </remarks>
+        /// <returns>True when the outboard segment's tip thickness was moved.</returns>
+        private static bool ContinueThickness(PartModule parent, PartModule child, Part part,
+                                              float span)
+        {
+            float slope = ThicknessSlopeOf(parent);
+            float rootThickness = Read(child, "sharedBaseThicknessRoot");
+            if (float.IsNaN(slope) || float.IsNaN(rootThickness)) return false;
+
+            // Only when the child's ROOT thickness actually moved - that is, when the
+            // parent's tip thickness propagated through the joint into it.
+            //
+            // Other edits tilt the parent's surface plane too. Shortening its span
+            // steepens the rate it thins at without touching any thickness field, and
+            // the surfaces stop being flat through the joint just the same. Following
+            // that as well would mean an ordinary span edit silently rewriting a
+            // child's thickness: on this craft, shortening the parent from 4 m to 3 m
+            // takes the child's tip from 0.100 to 0.033. Whether that is wanted is a
+            // question about which of coplanarity and thickness outranks the other,
+            // and it has not been answered, so this holds to the narrower rule.
+            float rootBefore = ReadBefore(child, "sharedBaseThicknessRoot");
+            if (!float.IsNaN(rootBefore) && Mathf.Abs(rootThickness - rootBefore) <= 1e-5f)
+                return false;
+
+            float wanted = rootThickness + slope * span;
+
+            // B9's floor, honoured rather than written through. A parent thinning fast
+            // enough would ask for a negative thickness here, which is not a wing; the
+            // surfaces stay flat for as much of the child as they can and the rest sits
+            // at the thinnest B9 allows. Not shortened the way a chord that runs out
+            // is: the span outranks the thickness, and a wing that is too thin at the
+            // tip is still the wing the player put there.
+            float floor = 0.01f;
+            if (LimitsOf(child, "sharedBaseThicknessTip", out float low, out _) && !float.IsNaN(low))
+                floor = Mathf.Max(low, 0.01f);
+            float thicknessTip = Mathf.Max(wanted, floor);
+
+            float now = Read(child, "sharedBaseThicknessTip");
+            if (!float.IsNaN(now) && Mathf.Abs(now - thicknessTip) <= 1e-5f) return false;
+
+            if (DimensionSettings.Debug)
+                UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} flat surfaces: " +
+                                      $"{part.partInfo?.title} tip thickness -> {thicknessTip:F3}" +
+                                      (thicknessTip > wanted + 1e-5f
+                                          ? $" (wanted {wanted:F3}, held at B9's floor)" : ""));
+
+            Write(part, child, "sharedBaseThicknessTip", thicknessTip);
+            return true;
+        }
+
+        /// <summary>
         /// Whether a part's own root end is the one nearer its host's root.
         /// </summary>
         /// <param name="node">The attached part.</param>
@@ -634,6 +723,8 @@ namespace DimensionSync
             "sharedBaseWidthTip",
             "sharedBaseOffsetRoot",
             "sharedBaseOffsetTip",
+            "sharedBaseThicknessRoot",
+            "sharedBaseThicknessTip",
         };
 
         /// <summary>
@@ -741,6 +832,55 @@ namespace DimensionSync
         /// same size, applied to the slope. Two edges a fraction of a degree apart
         /// were meant to be one line.
         /// </remarks>
+        /// <summary>
+        /// Whether two wings' surfaces ran flat through the joint before the edit.
+        /// </summary>
+        /// <remarks>
+        /// The thickness counterpart of <see cref="SlopesAgree"/>, and judged the same
+        /// way: the two have to MEET at the joint as well as fall away at the same
+        /// rate. Two wings tapering identically with a step between them are two
+        /// surfaces, not one.
+        /// </remarks>
+        private static bool ThicknessAgrees(PartModule parent, PartModule child)
+        {
+            float parentTip = ReadBefore(parent, "sharedBaseThicknessTip");
+            float childRoot = ReadBefore(child, "sharedBaseThicknessRoot");
+            if (float.IsNaN(parentTip) || float.IsNaN(childRoot)) return false;
+
+            float scale = Mathf.Max(Mathf.Abs(parentTip), Mathf.Abs(childRoot));
+            if (Mathf.Abs(parentTip - childRoot) > Mathf.Max(1e-4f, DimensionSettings.MatchTolerance * scale))
+                return false;
+
+            float one = ThicknessSlopeBefore(parent);
+            float other = ThicknessSlopeBefore(child);
+            if (float.IsNaN(one) || float.IsNaN(other)) return false;
+            return Mathf.Abs(one - other) <= Mathf.Max(DimensionSettings.MatchTolerance, 1e-3f);
+        }
+
+        /// <summary>How fast a wing thinned along its span before this frame's edit.</summary>
+        private static float ThicknessSlopeBefore(PartModule wing)
+        {
+            float span = ReadBefore(wing, "sharedBaseLength");
+            if (float.IsNaN(span) || span <= 1e-3f) return float.NaN;
+
+            float root = ReadBefore(wing, "sharedBaseThicknessRoot");
+            float tip = ReadBefore(wing, "sharedBaseThicknessTip");
+            if (float.IsNaN(root) || float.IsNaN(tip)) return float.NaN;
+            return (tip - root) / span;
+        }
+
+        /// <summary>How fast a wing thins along its span, as it stands now.</summary>
+        private static float ThicknessSlopeOf(PartModule wing)
+        {
+            float span = Read(wing, "sharedBaseLength");
+            if (float.IsNaN(span) || span <= 1e-3f) return float.NaN;
+
+            float root = Read(wing, "sharedBaseThicknessRoot");
+            float tip = Read(wing, "sharedBaseThicknessTip");
+            if (float.IsNaN(root) || float.IsNaN(tip)) return float.NaN;
+            return (tip - root) / span;
+        }
+
         private static bool SlopesAgree(PartModule parent, PartModule child, bool trailing)
         {
             // The two edges have to MEET as well as run parallel. Two rectangular

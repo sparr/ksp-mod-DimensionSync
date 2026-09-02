@@ -470,8 +470,14 @@ namespace DimensionSync
                     Name = edit.Slot.Field.name,
                 }] = edit.Slot.Descriptor.ToFieldUnits(edit.OldValue);
             }
-            // Anything that bends the line a wing's edges run along starts a
-            // carry-through into whatever is bolted to its tip.
+            // Anything that bends the line a wing's edges run along, or the plane its
+            // surfaces lie in, starts a carry-through into whatever is bolted to its
+            // tip.
+            //
+            // Both thickness fields, not only the tip. The tip one is what reaches the
+            // child's root through the thickness channel, but either of them tilts the
+            // plane the parent's surfaces lie in, and a child whose surfaces ran flat
+            // into that plane stops doing so the moment it tilts.
             //
             // The tip chord does it by moving both edges apart or together, and the
             // tip offset by moving them the same way. So does the SPAN: the same tip
@@ -485,7 +491,8 @@ namespace DimensionSync
             {
                 string field = _changes[i].Slot.Field.name;
                 if (field == "sharedBaseWidthTip" || field == "sharedBaseOffsetTip"
-                    || field == "sharedBaseLength")
+                    || field == "sharedBaseLength" || field == "sharedBaseThicknessTip"
+                    || field == "sharedBaseThicknessRoot")
                     _tipsEdited.Add(_changes[i].Slot.Part);
             }
 

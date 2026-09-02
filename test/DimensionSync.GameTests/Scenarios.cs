@@ -289,6 +289,13 @@ namespace DimensionSync.GameTests
                 + "assumption that decides where every station on a wing lies is worth "
                 + "holding to a measurement.");
 
+            yield return New("pwings_demo_surfaces_stay_flat_through_the_joint",
+                DemoSurfacesStayFlatThroughTheJoint,
+                "The player's craft again. Its two panels thin at the same rate and "
+                + "meet at the same thickness, so their surfaces run flat through the "
+                + "joint. Changing the inner panel's tip thickness has to keep them "
+                + "flat, which means the OUTER panel's tip thickness has to move too.");
+
             yield return New("pwings_cranked_delta_keeps_its_tip_chord",
                 CrankedDeltaKeepsItsTipChord,
                 "A cranked planform: two panels sharing a straight LEADING edge with a "
@@ -2870,6 +2877,72 @@ namespace DimensionSync.GameTests
                 }
             }
             return any ? box.size : Vector3.zero;
+        }
+
+        /// <summary>
+        /// Surfaces that ran flat through a joint go on doing so.
+        /// </summary>
+        /// <remarks>
+        /// The thickness counterpart of the collinear-edge case, and the craft is
+        /// already built for it: the inner panel thins 0.5 to 0.3 over 4 m and the
+        /// outer 0.3 to 0.1 over 4 m, so both fall away at 0.05 m per metre and meet
+        /// at 0.3 where they join.
+        ///
+        /// Thickening the inner tip reaches the outer ROOT through the thickness
+        /// channel on its own - that is the joint. What this is about is the outer
+        /// TIP, which has to follow for the surfaces to stay flat rather than kink at
+        /// the seam.
+        /// </remarks>
+        private static IEnumerator DemoSurfacesStayFlatThroughTheJoint(TestContext context)
+        {
+            var rig = new DemoRig();
+            yield return BuildDemoRig(context, rig);
+            if (!rig.Ok) yield break;
+
+            float parentRoot = PartFields.Get(rig.Parent, PWingModule, "sharedBaseThicknessRoot");
+            float parentTip = PartFields.Get(rig.Parent, PWingModule, "sharedBaseThicknessTip");
+            float childRoot = PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessRoot");
+            float childTip = PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessTip");
+            float parentSpan = PartFields.Get(rig.Parent, PWingModule, "sharedBaseLength");
+            float childSpan = PartFields.Get(rig.Child, PWingModule, "sharedBaseLength");
+            Harness.Log($"FLAT before: parent {parentRoot:F3}->{parentTip:F3} over {parentSpan:F1}, " +
+                        $"child {childRoot:F3}->{childTip:F3} over {childSpan:F1}");
+
+            // Worth checking rather than assuming: if the craft is ever resaved with a
+            // step or a different taper at this joint, the surfaces are not flat
+            // through it and this scenario is testing nothing.
+            float parentRate = (parentTip - parentRoot) / parentSpan;
+            float childRate = (childTip - childRoot) / childSpan;
+            context.Check("the fixture's surfaces start flat through the joint",
+                          childRate, parentRate, 0.002f);
+            context.Check("and the two meet at the same thickness", childRoot, parentTip, 0.01f);
+
+            yield return context.Say("Thickening the inner panel's tip from 0.3 m to 0.4 m.",
+                                     "That tilts the plane its surfaces lie in. The outer panel's "
+                                     + "root follows through the joint; its TIP has to follow too, "
+                                     + "or the surfaces kink at the seam.");
+
+            PartFields.Set(rig.Parent, PWingModule, "sharedBaseThicknessTip", 0.4f,
+                           WriteMode.DirectAssignment);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float parentRootAfter = PartFields.Get(rig.Parent, PWingModule, "sharedBaseThicknessRoot");
+            float parentTipAfter = PartFields.Get(rig.Parent, PWingModule, "sharedBaseThicknessTip");
+            float childRootAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessRoot");
+            float childTipAfter = PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessTip");
+            float parentRateAfter = (parentTipAfter - parentRootAfter) / parentSpan;
+            float childRateAfter = (childTipAfter - childRootAfter) / childSpan;
+            Harness.Log($"FLAT after: parent {parentRootAfter:F3}->{parentTipAfter:F3}, " +
+                        $"child {childRootAfter:F3}->{childTipAfter:F3}, " +
+                        $"rates {parentRateAfter:F4} vs {childRateAfter:F4}");
+
+            context.Check("the outer panel's root took the inner panel's new tip",
+                          childRootAfter, parentTipAfter, 0.01f);
+            context.CheckTrue($"its tip moved as well ({childTip:F3} -> {childTipAfter:F3})",
+                              Mathf.Abs(childTipAfter - childTip) > 0.001f);
+            context.Check("and the surfaces still run flat through the joint",
+                          childRateAfter, parentRateAfter, 0.002f);
         }
 
         /// <summary>
