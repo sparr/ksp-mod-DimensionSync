@@ -625,20 +625,14 @@ namespace DimensionSync
             float rootThickness = Read(child, "sharedBaseThicknessRoot");
             if (float.IsNaN(slope) || float.IsNaN(rootThickness)) return false;
 
-            // Only when the child's ROOT thickness actually moved - that is, when the
-            // parent's tip thickness propagated through the joint into it.
-            //
-            // Other edits tilt the parent's surface plane too. Shortening its span
-            // steepens the rate it thins at without touching any thickness field, and
-            // the surfaces stop being flat through the joint just the same. Following
-            // that as well would mean an ordinary span edit silently rewriting a
-            // child's thickness: on this craft, shortening the parent from 4 m to 3 m
-            // takes the child's tip from 0.100 to 0.033. Whether that is wanted is a
-            // question about which of coplanarity and thickness outranks the other,
-            // and it has not been answered, so this holds to the narrower rule.
-            float rootBefore = ReadBefore(child, "sharedBaseThicknessRoot");
-            if (!float.IsNaN(rootBefore) && Mathf.Abs(rootThickness - rootBefore) <= 1e-5f)
-                return false;
+            // Whatever tilted the parent's plane, not only a thickness that came
+            // through the joint. Shortening the parent's span steepens the rate it
+            // thins at without touching a thickness field at all, and surfaces that
+            // ran flat through the joint stop doing so just as surely. Coplanarity
+            // ranks with collinearity, above every individual dimension, so the child's
+            // tip thickness is spent to keep it - on this craft, shortening the parent
+            // from 4 m to 3 m takes the child's tip from 0.100 to 0.033 and the two
+            // surfaces stay on one plane.
 
             float wanted = rootThickness + slope * span;
 

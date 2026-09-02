@@ -3112,8 +3112,24 @@ namespace DimensionSync.GameTests
                         $"tipOffset {offsetBefore:F3} -> {offsetAfter:F3}");
 
             context.Check($"the child kept its span ({spanBefore:F3})", spanAfter, spanBefore, 0.01f);
-            context.Check("and its root thickness", thickRootAfter, thickRootBefore, 0.01f);
-            context.Check("and its tip thickness", thickTipAfter, thickTipBefore, 0.01f);
+            context.Check("and its root thickness, which nothing came through the joint to change",
+                          thickRootAfter, thickRootBefore, 0.01f);
+
+            // Its TIP thickness is expected to move. Shortening the parent steepened
+            // the rate it thins at, and surfaces that ran flat through the joint have
+            // to go on doing so - coplanarity ranks with collinearity, above any single
+            // dimension, so the thickness is spent to keep it and only the span is
+            // sacred.
+            float parentRate = (PartFields.Get(rig.Parent, PWingModule, "sharedBaseThicknessTip")
+                                - PartFields.Get(rig.Parent, PWingModule, "sharedBaseThicknessRoot"))
+                               / PartFields.Get(rig.Parent, PWingModule, "sharedBaseLength");
+            float childRate = (thickTipAfter - thickRootAfter) / spanAfter;
+            Harness.Log($"DEMOCOST rates parent {parentRate:F4} child {childRate:F4}");
+
+            context.CheckTrue($"its tip thickness moved to hold the surfaces flat "
+                              + $"({thickTipBefore:F3} -> {thickTipAfter:F3})",
+                              Mathf.Abs(thickTipAfter - thickTipBefore) > 0.001f);
+            context.Check("and they are still flat through the joint", childRate, parentRate, 0.002f);
 
             // Said out loud rather than left implied: the angles were held, and these
             // are the two dimensions it was allowed to spend to hold them.
