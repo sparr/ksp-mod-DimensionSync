@@ -68,6 +68,26 @@ namespace DimensionSync
         /// <summary>Changes seen in the current poll. Reused to keep the poll allocation-free.</summary>
         private readonly List<DimensionChange> _changes = new List<DimensionChange>();
 
+        /// <summary>
+        /// Every field this mod has written and the value it wrote, until the next
+        /// poll has accounted for it.
+        /// </summary>
+        /// <remarks>
+        /// So the mod can tell its own writes from a player's. Recache is not enough
+        /// on its own: it snapshots the moment propagation finishes, and B9 goes on
+        /// adjusting a part for frames afterwards, so the value that finally settles
+        /// is not the value that was cached and the next poll reads the difference as
+        /// somebody reaching for the slider.
+        ///
+        /// That misreading is not cosmetic. A control surface whose length THIS MOD
+        /// set, coming back as a length the PLAYER set, tells the conformance rules to
+        /// leave it where it is - because a flap somebody is resizing by hand grows
+        /// about its own middle and must not be slid. The mirrored half of every pair
+        /// was being told exactly that, and so never got the slide its twin did.
+        /// </remarks>
+        private static readonly Dictionary<WingConformance.PartField, float> OwnWrites =
+            new Dictionary<WingConformance.PartField, float>();
+
         /// <summary>Scratch list of parts to drop from <see cref="_nodes"/>. Reused.</summary>
         private readonly List<Part> _stale = new List<Part>();
 
@@ -391,6 +411,14 @@ namespace DimensionSync
                     float oldRaw = slot.CachedRaw;
                     slot.CachedRaw = raw;
 
+                    // Ours, not theirs. The cache is moved on either way - the value
+                    // really did change - but nothing is propagated from it and none
+                    // of the rules that ask "did the player touch this?" are told yes.
+                    if (WasOurOwnWrite(slot.Part, slot.Field.name,
+                                       slot.Descriptor.ToCommonUnits(raw))
+                        || WasOurOwnWrite(slot.Part, slot.Field.name, raw))
+                        continue;
+
                     // Fields nobody could have edited still get their cache moved
                     // on - so they do not fire later - but nothing is propagated
                     // from them. ProceduralParts' unselected shape modules are the
@@ -425,6 +453,10 @@ namespace DimensionSync
             {
                 DimensionChange edit = _changes[i];
                 if (edit.Slot.Descriptor.Channel != Channels.Span) continue;
+                if (Debug)
+                    UnityEngine.Debug.Log($"{LogTag} LENEDIT #{edit.Slot.Part.GetInstanceID()} " +
+                                          $"{edit.Slot.Field.name} {edit.OldValue:F4} -> {edit.NewValue:F4} " +
+                                          $"treated as a PLAYER length edit");
                 WingConformance.NoteLengthEdited(edit.Slot.Part);
                 _lengthsEdited.Add(edit.Slot.Part);
             }
@@ -533,6 +565,12 @@ namespace DimensionSync
                 WingConformance.MatchSweep(_nodes, _lengthsEdited);
                 WingConformance.RefitAfterLengthEdit(_nodes, _lengthsEdited);
 
+                // Last, because it reads the wings' thickness and the rules above are
+                // still changing it: KeepEdgesStraight moves a child's tip to hold a
+                // plane flat, and a surface on that child has to take its thickness
+                // from where the wing ENDED UP.
+                WingConformance.RefitForThicknessChange(_nodes);
+
                 foreach (Part part in _windowsToRefresh)
                     if (part != null) MonoUtilities.RefreshPartContextWindow(part);
 
@@ -587,6 +625,47 @@ namespace DimensionSync
         // =====================================================================
 
         /// <summary>
+        /// <summary>Remember that this mod wrote a field, and what it wrote.</summary>
+        private static void NoteOwnWrite(Part part, BaseField field, object value)
+        {
+            if (part == null || field == null) return;
+            if (!KspDimensionSlot.TryUnbox(value, out float number)) return;
+
+            OwnWrites[new WingConformance.PartField { Part = part, Name = field.name }] = number;
+
+            // And on every counterpart, because the copy does not have to be made by
+            // this mod for it to be this mod's doing. B9 mirrors a wing field across a
+            // symmetry pair itself when one side is written, so the value simply turns
+            // up on the other side with nothing of ours having touched it - and a
+            // record of only what we wrote directly cannot recognise it. Recording the
+            // EXPECTATION instead covers both, and costs nothing when the copy never
+            // arrives: an entry that is never matched is dropped with the rest.
+            if (part.symmetryCounterparts == null) return;
+            for (int i = 0; i < part.symmetryCounterparts.Count; i++)
+            {
+                Part twin = part.symmetryCounterparts[i];
+                if (twin == null) continue;
+                OwnWrites[new WingConformance.PartField { Part = twin, Name = field.name }] = number;
+            }
+        }
+
+        /// <summary>
+        /// Whether a field's new value is one this mod put there rather than a player.
+        /// </summary>
+        /// <remarks>
+        /// Consumed once. A value that matches is accounted for and forgotten, so a
+        /// player who genuinely sets the same number afterwards is not ignored.
+        /// </remarks>
+        private static bool WasOurOwnWrite(Part part, string name, float value)
+        {
+            var key = new WingConformance.PartField { Part = part, Name = name };
+            if (!OwnWrites.TryGetValue(key, out float written)) return false;
+            if (Mathf.Abs(written - value) > 1e-4f) return false;
+
+            OwnWrites.Remove(key);
+            return true;
+        }
+
         /// Set a field exactly as <c>UIPartActionFieldItem.SetFieldValue</c> does, so
         /// the owning mod cannot tell the difference between this and the player
         /// dragging the slider.
@@ -606,6 +685,8 @@ namespace DimensionSync
         internal static void SetFieldLikeUI(Part part, PartModule module, BaseField field, object newValue)
         {
             if (field == null) return;
+
+            NoteOwnWrite(part, field, newValue);
 
             object oldValue = field.GetValue(field.host);
             bool changed = !Equals(oldValue, newValue);
@@ -685,6 +766,10 @@ namespace DimensionSync
                 if (counterpartField == null) continue;
 
                 if (!Equals(counterpartField.GetValue(counterpartField.host), newValue)) changed = true;
+
+                // Recorded as OURS. This is the write that was being read back as a
+                // player edit on the mirrored half of every pair.
+                NoteOwnWrite(counterpart, counterpartField, newValue);
                 counterpartField.SetValue(newValue, counterpartField.host);
 
                 // Stock passes the *primary* part's field and the new value here,

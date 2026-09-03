@@ -3207,9 +3207,38 @@ namespace DimensionSync.GameTests
 
             Harness.Log($"DEMO parent {Describe(rig.Parent)}");
             Harness.Log($"DEMO child  {Describe(rig.Child)}");
+            // Where every surface sits along its wing, straight off the craft file and
+            // before a single edit. If the two sides already disagree here then the
+            // craft was built that way and the mod is being blamed for it; if they
+            // agree, everything after this is the mod's doing.
+            var asLoaded = new List<string>();
+            foreach (Part part in ship.parts)
+            {
+                PartModule module = FindWing(part);
+                if (module == null || !IsControl(module) || part.parent == null) continue;
+                Vector3 local = part.parent.transform.InverseTransformPoint(part.transform.position);
+                asLoaded.Add($"#{part.GetInstanceID()} span {local.x:F4} chord {local.y:F4}");
+            }
+            Harness.Log($"DEMO seats as loaded: {string.Join(" | ", asLoaded.ToArray())}");
             Harness.Log($"DEMO parent flap {(rig.ParentFlap == null ? "none" : Describe(rig.ParentFlap))}");
             Harness.Log($"DEMO child flap  {(rig.ChildFlap == null ? "none" : Describe(rig.ChildFlap))}");
             rig.Ok = true;
+        }
+
+        /// <summary>Every control surface's thickness, identified, for spotting a stray write.</summary>
+        private static string FlapThicknesses()
+        {
+            var seen = new List<string>();
+            foreach (Part part in EditorLogic.fetch.ship.parts)
+            {
+                PartModule module = FindWing(part);
+                if (module == null || !IsControl(module)) continue;
+                seen.Add($"#{part.GetInstanceID()} " +
+                         $"{PartFields.Get(part, PWingModule, "sharedBaseThicknessRoot"):F3}/" +
+                         $"{PartFields.Get(part, PWingModule, "sharedBaseThicknessTip"):F3} " +
+                         $"len {PartFields.Get(part, PWingModule, "sharedBaseLength"):F3}");
+            }
+            return string.Join(" | ", seen.ToArray());
         }
 
         /// <summary>A wing's dimensions in one line, for reading a craft's state.</summary>
@@ -3253,6 +3282,7 @@ namespace DimensionSync.GameTests
 
             float leadBefore = EdgeAngleOf(rig.Parent, trailing: false);
             float childLeadBefore = EdgeAngleOf(rig.Child, trailing: false);
+            Harness.Log($"LEN42 flaps before: {FlapThicknesses()}");
             Harness.Log($"DEMOLEN before: parent lead {leadBefore:F3} deg, " +
                         $"child lead {childLeadBefore:F3} deg");
 
@@ -3272,6 +3302,13 @@ namespace DimensionSync.GameTests
                         $"child lead {childLead:F3} trail {childTrail:F3}");
             Harness.Log($"DEMOLEN parent {Describe(rig.Parent)}");
             Harness.Log($"DEMOLEN child  {Describe(rig.Child)}");
+
+            Harness.Log($"LEN42 flaps after:  {FlapThicknesses()}");
+            Harness.Log($"LEN42 wings after: parent thickness " +
+                        $"{PartFields.Get(rig.Parent, PWingModule, "sharedBaseThicknessRoot"):F3}/" +
+                        $"{PartFields.Get(rig.Parent, PWingModule, "sharedBaseThicknessTip"):F3}, " +
+                        $"child {PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessRoot"):F3}/" +
+                        $"{PartFields.Get(rig.Child, PWingModule, "sharedBaseThicknessTip"):F3}");
 
             context.Check("the child's leading edge still runs at the parent's angle",
                           childLead, parentLead, 0.5f);
@@ -3342,6 +3379,46 @@ namespace DimensionSync.GameTests
                 Harness.Log($"DEMOOFF   child  {Describe(rig.Child)} " +
                             $"trailAngle {EdgeAngleOf(rig.Child, trailing: true):F2}");
                 Harness.Log($"DEMOOFF flaps: {string.Join(" | ", seen.ToArray())}");
+
+                // Where each surface sits ALONG its wing, which the gap check cannot
+                // see: EdgeGap measures across to the edge, so a surface that slides
+                // spanwise stays flush and reads as perfectly placed while creeping
+                // toward the root. Both sides, because a mirrored pair that stops
+                // agreeing is the signature of a symmetry problem.
+                var seats = new List<string>();
+                foreach (Part part in EditorLogic.fetch.ship.parts)
+                {
+                    PartModule module = FindWing(part);
+                    if (module == null || !IsControl(module) || part.parent == null) continue;
+                    Vector3 local = part.parent.transform.InverseTransformPoint(part.transform.position);
+                    seats.Add($"#{part.GetInstanceID()} span {local.x:F3} chord {local.y:F3}");
+                }
+                Harness.Log($"DEMOOFF seats: {string.Join(" | ", seats.ToArray())}");
+
+                // A mirrored pair must agree. This is the invariant the gap checks
+                // cannot express: a surface that slides ALONG its wing stays perfectly
+                // flush and reads as correctly placed, so the drift that put one side
+                // 0.671 m inboard of its twin went unnoticed here for as long as the
+                // scenario existed. Two parts built as mirrors of one another have no
+                // business ending up in different places on their own wings.
+                foreach (Part part in EditorLogic.fetch.ship.parts)
+                {
+                    PartModule module = FindWing(part);
+                    if (module == null || !IsControl(module) || part.parent == null) continue;
+                    if (part.symmetryCounterparts == null) continue;
+
+                    float mine = part.parent.transform.InverseTransformPoint(part.transform.position).x;
+                    for (int i = 0; i < part.symmetryCounterparts.Count; i++)
+                    {
+                        Part twin = part.symmetryCounterparts[i];
+                        if (twin == null || twin.parent == null) continue;
+                        float theirs = twin.parent.transform
+                            .InverseTransformPoint(twin.transform.position).x;
+                        context.Check($"at tip offset {offset:F1} a mirrored pair sits at the same "
+                                      + "station along their wings",
+                                      theirs, mine, 0.02f);
+                    }
+                }
 
                 context.CheckTrue($"at tip offset {offset:F1} the parent's flap is still on its edge "
                                   + $"(off by {parentGap:F3} m)", Mathf.Abs(parentGap) <= 0.2f);
@@ -4174,6 +4251,19 @@ namespace DimensionSync.GameTests
                               + $"outer root {outerRoot:F3}, flap root {flapRoot:F3})",
                               Mathf.Abs(outerRoot - 0.4f) > 1e-3f && Mathf.Abs(flapRoot - 0.4f) > 1e-3f);
             context.Check("the outer wing's root matches the inner wing's tip", outerRoot, innerTip, 1e-3f);
+            // BOTH ends of it, not only the end at the joint. The surface runs the
+            // whole of the outer wing, so it has to taper the way the wing does; the
+            // thickness channel on its own writes one number to both ends and leaves
+            // a parallel-sided surface on a tapering wing, which the root check alone
+            // cannot see.
+            float outerTip = PartFields.Get(outer, PWingModule, "sharedBaseThicknessTip");
+            float flapRootThickness = PartFields.Get(trailing, PWingModule, "sharedBaseThicknessRoot");
+            float flapTipThickness = PartFields.Get(trailing, PWingModule, "sharedBaseThicknessTip");
+            Harness.Log($"OUTBOARD47 outer wing {outerRoot:F3}/{outerTip:F3}, " +
+                        $"flap {flapRootThickness:F3}/{flapTipThickness:F3}");
+            context.Check("the control surface is as thick as the outer wing at its TIP too",
+                          flapTipThickness, outerTip, 0.02f);
+
             context.Check("the control surface matches the outer wing where they meet",
                           flapRoot, outerRoot, 1e-3f);
             context.CheckTrue("nothing came adrift",

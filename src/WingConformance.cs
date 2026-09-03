@@ -966,6 +966,10 @@ namespace DimensionSync
             // Read before anything below updates it: this is the stretch the part is
             // already carrying, and it is what the flap's current length has to be
             // measured against to say what fraction of the wing it covers.
+            if (DimensionSettings.Debug)
+                UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} CONFORM #{part.GetInstanceID()} " +
+                                      $"on wing #{host.Part.GetInstanceID()} entered");
+
             float already = StretchAlreadyApplied(part, node, host);
 
             bool trailing = IsOnTrailingEdge(part, wing);
@@ -1052,9 +1056,12 @@ namespace DimensionSync
                 part.attRotation0 = part.transform.localRotation;
 
                 if (DimensionSettings.Debug)
-                    UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} sweep: {node.Label} on " +
+                    UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} sweep: #{part.GetInstanceID()} " +
+                                          $"on wing #{host.Part.GetInstanceID()} " +
                                           $"{(trailing ? "trailing" : "leading")} edge, slope {slope:F4}, " +
-                                          $"turning {turn:F2} deg about station {from:F2}");
+                                          $"turning {turn:F2} deg about station {from:F4}, " +
+                                          $"axis {host.Part.transform.TransformDirection(ThicknessAxis)}, " +
+                                          $"spanAxis {host.SpanAxis()}");
             }
 
             SweepApplied[part] = wanted;
@@ -1172,6 +1179,17 @@ namespace DimensionSync
             // span change, which Reanchor has already accounted for by putting the
             // surface back on its station. Taking it out here as well slides the
             // surface a second time, by half the span growth, outboard.
+            // Read off the field, which holds the length after this frame's SPAN
+            // propagation and before its stretch - the baseline the slide wants.
+            //
+            // Two other forms were tried and both were worse. A remembered baseline
+            // fixed the mirrored case and broke the partial-span one, because a length
+            // the span channel legitimately changed then looked like growth that had
+            // already been accounted for. Computing it as span * fraction * already
+            // broke every span edit outright: that pairs the NEW span with the OLD
+            // stretch, so a wing whose span changes hands its surfaces a baseline that
+            // has already absorbed the change, and they never slide with it - half a
+            // metre off the wing on a 4 m span.
             float lengthBefore = Read(surface, "sharedBaseLength");
             Write(part, surface, "sharedBaseLength", hinge);
 
@@ -1201,7 +1219,7 @@ namespace DimensionSync
             EditorGizmo.PartMoved(part);
 
             if (DimensionSettings.Debug)
-                UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} hinge: {node.Label} {lengthBefore:F3} -> " +
+                UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} hinge: #{part.GetInstanceID()} {lengthBefore:F3} -> " +
                                       $"{hinge:F3}, sliding {grew / 2f:F3} m outboard to keep the end " +
                                       "it was anchored by");
         }
@@ -1759,6 +1777,60 @@ namespace DimensionSync
             }
 
             if (moved.Count > 0) Refit(nodes, moved);
+        }
+
+        /// <summary>
+        /// Re-derive a control surface's thickness when its WING's thickness changed.
+        /// </summary>
+        /// <remarks>
+        /// The third way a surface's thickness can go stale, and the one nothing
+        /// covered. A refit used to happen only when the player edited the surface's
+        /// own length or when it slid along the wing - but a wing whose thickness
+        /// changes underneath a surface that has not moved at all leaves it just as
+        /// wrong.
+        ///
+        /// What filled the gap was the thickness channel, which carries a single
+        /// number: a surface whose root and tip both matched the wing's old thickness
+        /// gets the new one written to BOTH ends. That is right only for a wing of
+        /// constant thickness. Thicken one end of a tapered wing and the surface comes
+        /// out uniform at the new value - on the outboard fixture, 0.9 at both ends of
+        /// a surface whose wing runs 0.9 to 1.4.
+        ///
+        /// Refit itself already knows how to do this properly: it spreads the wing's
+        /// thickness across the stretch of span the surface actually covers. It only
+        /// needed to be asked.
+        /// </remarks>
+        public static void RefitForThicknessChange(Dictionary<Part, KspDimensionNode> nodes)
+        {
+            var changed = new HashSet<Part>();
+            foreach (KeyValuePair<Part, KspDimensionNode> entry in nodes)
+            {
+                Part part = entry.Key;
+                if (part == null || part.parent == null) continue;
+
+                PartModule surface = FindWingModule(part);
+                PartModule wing = FindWingModule(part.parent);
+                if (surface == null || wing == null) continue;
+                if (!IsControlSurface(surface) || IsControlSurface(wing)) continue;
+
+                // Its wing's thickness, both ends, as it stood before this frame. The
+                // mod's own writes are in that record too, so a wing whose tip this
+                // mod moved to hold a plane flat counts exactly as a wing the player
+                // thickened.
+                if (Moved(wing, "sharedBaseThicknessRoot") || Moved(wing, "sharedBaseThicknessTip"))
+                    changed.Add(part);
+            }
+
+            if (changed.Count > 0) Refit(nodes, changed);
+        }
+
+        /// <summary>Whether a field is not where it was before this frame's changes.</summary>
+        private static bool Moved(PartModule module, string name)
+        {
+            float before = ReadBefore(module, name);
+            float now = Read(module, name);
+            if (float.IsNaN(before) || float.IsNaN(now)) return false;
+            return Mathf.Abs(now - before) > 1e-5f;
         }
 
         /// <summary>Re-derive the thickness of each of these control surfaces from its wing.</summary>
