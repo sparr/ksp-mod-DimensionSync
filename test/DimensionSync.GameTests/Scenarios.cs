@@ -4085,7 +4085,14 @@ namespace DimensionSync.GameTests
             yield return BuildWingRig(context, rig, chord: 3f, thicknessRoot: 0.5f, thicknessTip: 0.5f);
             if (!rig.Ok) yield break;
 
-            Vector3 home = rig.Trailing.transform.position;
+            // Kept in the WING's frame, not the world's. The craft is lifted clear of
+            // the floor between here and the moment this is restored, so a world point
+            // remembered now names a different place on the wing by then - and the
+            // place it named was, as it happens, exactly where the surface gets moved
+            // TO, so putting it "back" left it where it already was. The step passed
+            // regardless, because what it checked afterwards was the surface's span
+            // and never its position.
+            Vector3 homeSeat = rig.Wing.transform.InverseTransformPoint(rig.Trailing.transform.position);
             float shift = 1.5f;
 
             rig.Trailing.transform.position -= rig.Wing.transform.up * shift;
@@ -4126,7 +4133,7 @@ namespace DimensionSync.GameTests
                                      "Once it is on the edge again the rules should take it up as "
                                      + "before - this is not a one-way door.");
 
-            rig.Trailing.transform.position = home;
+            rig.Trailing.transform.position = rig.Wing.transform.TransformPoint(homeSeat);
             rig.Trailing.attPos0 = rig.Trailing.transform.localPosition;
             GameEvents.onEditorPartEvent.Fire(ConstructionEventType.PartOffset, rig.Trailing);
             yield return context.Settled();
@@ -4136,8 +4143,76 @@ namespace DimensionSync.GameTests
             EditorBuilder.PresentShip();
 
             float taken = PartFields.Get(rig.Trailing, PWingModule, "sharedBaseLength");
-            Harness.Log($"PLAYERMOVED taken up again: span {taken:F3} (the wing is 4)");
-            context.Check("the surface follows its wing again once it is put back", taken, 4f, 0.3f);
+            Harness.Log($"PLAYERMOVED taken up again: span {taken:F3} (the wing is 4), " +
+                        $"seat {rig.Wing.transform.InverseTransformPoint(rig.Trailing.transform.position)}, " +
+                        $"home {homeSeat}, " +
+                        $"wing trailing edge at root {EditorBuilder.WingEdge(rig.Wing, trailing: true, station: 0f):F3}, " +
+                        $"gap {EditorBuilder.EdgeGap(rig.Wing, rig.Trailing, trailing: true):F3}");
+            // Two thirds of the wing, not all of it. It is put back while the wing is
+            // 6 m long and it is still 4 m, so that is the fraction it covers from then
+            // on; the wing returning to 4 m makes it 2.667 m. Following its wing means
+            // keeping the share of it that it actually has, whoever set the numbers.
+            //
+            // This asked for 4 m until the put-back was fixed to happen at all. The
+            // world position it restored had gone stale when the craft was lifted clear
+            // of the floor, so the surface never returned to the edge, and the only
+            // thing checked afterwards was its span - which followed the wing for
+            // reasons that had nothing to do with being put back.
+            context.Check("the surface follows its wing again once it is put back, keeping the "
+                          + "share of it that it covers", taken, 8f / 3f, 0.3f);
+
+            // Put back SHORT, and then the wing resized again.
+            //
+            // Being taken up again is only half the question. A surface returned to the
+            // edge while it is shorter than the wing has a coverage the rules have to
+            // work out afresh - the fraction they remembered belongs to the length it
+            // had before the player took it off - and the test that stopped at "it
+            // follows again" never asked whether the figure they took up was the right
+            // one. A wrong fraction does not show until the NEXT edit, when it is
+            // applied to a new span.
+            yield return context.Say("The player shortens it to 2 m, still on the edge.",
+                                     "Half the wing. Whatever the rules remembered about how much "
+                                     + "of the wing it covers has to be re-derived from what is "
+                                     + "actually there now.");
+
+            PartFields.Set(rig.Trailing, PWingModule, "sharedBaseLength", 2f, WriteMode.DirectAssignment);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float shortened = PartFields.Get(rig.Trailing, PWingModule, "sharedBaseLength");
+            // At the station the surface actually covers. EdgeGap defaults to the
+            // wing's ROOT, and a half-length surface sitting about the wing's middle is
+            // simply not there - the figure that comes back measures to a corner a
+            // metre away along the span and says nothing about whether it is on its
+            // edge.
+            float gapShort = EditorBuilder.EdgeGap(rig.Wing, rig.Trailing, trailing: true,
+                                                   station: 0.5f);
+            Harness.Log($"PLAYERMOVED shortened to {shortened:F3} on a 4 m wing, gap {gapShort:F3}");
+            context.Check("the shortened surface kept the length the player gave it",
+                          shortened, 2f, 0.05f);
+            context.CheckTrue($"and is still on the wing's edge (off by {gapShort:F3} m)",
+                              Mathf.Abs(gapShort) <= 0.15f);
+
+            yield return context.Say("Now the wing is lengthened to 8 m.",
+                                     "The surface covers half the wing, so it should become 4 m - "
+                                     + "half of the new span - rather than going back to whatever "
+                                     + "fraction it had before the player interfered.");
+
+            PartFields.Set(rig.Wing, PWingModule, "sharedBaseLength", 8f, WriteMode.DirectAssignment);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float resized = PartFields.Get(rig.Trailing, PWingModule, "sharedBaseLength");
+            float gapAfter = EditorBuilder.EdgeGap(rig.Wing, rig.Trailing, trailing: true,
+                                                   station: 0.5f);
+            Harness.Log($"PLAYERMOVED resized with the wing: {shortened:F3} -> {resized:F3} " +
+                        $"on an 8 m wing, gap {gapAfter:F3}");
+
+            context.Check("the surface scaled with the wing, keeping the half it covered",
+                          resized, 4f, 0.3f);
+            context.CheckTrue($"and stayed on the edge (off by {gapAfter:F3} m)",
+                              Mathf.Abs(gapAfter) <= 0.15f);
+            context.CheckTrue("and is still attached to the wing", rig.Trailing.parent == rig.Wing);
         }
 
         /// <summary>
