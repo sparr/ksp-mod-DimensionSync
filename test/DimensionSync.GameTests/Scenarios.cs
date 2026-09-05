@@ -4386,17 +4386,7 @@ namespace DimensionSync.GameTests
             yield return context.Frames(10);
 
             // The coordinate space is TOGGLED and then read back, never assumed.
-            string spaceBefore = GizmoSpace();
-            if (localSpace)
-            {
-                SyntheticInput.Press("f");
-                yield return context.Frames(12);
-                string spaceAfter = GizmoSpace();
-                Harness.Log($"GIZMO coordinate space {spaceBefore} -> {spaceAfter}");
-                if (spaceAfter == spaceBefore)
-                    Harness.Log("GIZMO the space did not change - F is not the toggle, "
-                                + "or the keystroke went elsewhere");
-            }
+
 
             var stations = new List<Vector3>();
             foreach (float along in new[] { 0f, 0.25f, -0.25f, 0.4f, -0.4f })
@@ -4435,6 +4425,34 @@ namespace DimensionSync.GameTests
                               + $"{tried.Count} points tried: {string.Join(", ", tried.ToArray())}";
                 yield break;
             }
+
+            // The gizmo exists from here on, which is the only point at which the
+            // editor's coordinate toggle does anything at all.
+            // Put the editor into the space this scenario wants, rather than flipping
+            // whatever it happens to be in.
+            //
+            // The coordinate space is one editor-wide setting, not a property of a
+            // gizmo, so it outlives the scenario that changed it: blind toggling left
+            // the NEXT scenario running in local mode when it meant to test absolute,
+            // and reporting absolute coverage it never had. Asked for by name it does
+            // not matter what ran before.
+            string wanted = localSpace ? "Self" : "World";
+            if (GizmoSpace() != wanted)
+            {
+                if (!ToggleCoordSpace())
+                {
+                    outcome.Why = "the editor's changeCoordSpace could not be called";
+                    yield break;
+                }
+                yield return context.Frames(12);
+            }
+
+            if (GizmoSpace() != wanted)
+            {
+                outcome.Why = $"the editor would not go into {wanted} space; it is in {GizmoSpace()}";
+                yield break;
+            }
+            Harness.Log($"GIZMO coordinate space is {GizmoSpace()}, as asked");
 
             outcome.Space = GizmoSpace();
             outcome.Before = wing.transform.InverseTransformPoint(part.transform.position).x;
@@ -4498,6 +4516,40 @@ namespace DimensionSync.GameTests
             outcome.Moved = true;
             outcome.Why = $"moved with the gizmo in {outcome.Space} space";
             Harness.Log($"GIZMO {part.name} {outcome.Space}: station {outcome.Before:F3} -> {outcome.After:F3}");
+        }
+
+        /// <summary>
+        /// Flip the editor between world and local coordinates, the way its button does.
+        /// </summary>
+        /// <remarks>
+        /// EditorLogic.changeCoordSpace is what the toolbar's coordinate-space button is
+        /// wired to; it calls GizmoOffset.SetCoordSystem and moves the indicator with it.
+        /// Calling it directly takes the same path without having to find a button that
+        /// sits underneath B9's collapsed panel.
+        ///
+        /// It only does anything once a gizmo EXISTS - its first act is to look for
+        /// EditorLogic.gizmoOffset and return if there is none - so it has to be called
+        /// after a part is selected, not when the tool is chosen. Called too early it
+        /// reports nothing and changes nothing, which looks exactly like the F key,
+        /// which is simply not the binding.
+        /// </remarks>
+        private static bool ToggleCoordSpace()
+        {
+            EditorLogic editor = EditorLogic.fetch;
+            if (editor == null) return false;
+
+            System.Reflection.MethodInfo toggle = typeof(EditorLogic).GetMethod(
+                "changeCoordSpace",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Instance);
+            if (toggle == null)
+            {
+                Harness.Log("GIZMO EditorLogic has no changeCoordSpace to call");
+                return false;
+            }
+
+            toggle.Invoke(editor, null);
+            return true;
         }
 
         /// <summary>Which coordinate space the offset gizmo is in, as it reports it.</summary>
