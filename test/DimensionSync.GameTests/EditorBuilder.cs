@@ -1143,12 +1143,53 @@ namespace DimensionSync.GameTests
         /// <summary>False until this scenario's ship has been given its headroom.</summary>
         private static bool _floorSettled;
 
+        /// <summary>
+        /// Look straight down at a point, so nothing can be hidden behind anything.
+        /// </summary>
+        /// <remarks>
+        /// For clicking a part that lies against another one. A control surface sits on
+        /// its wing's edge, and from the side the wing is between it and the camera -
+        /// the pointer finds the wing however carefully the aim is computed, and the
+        /// part cannot be selected at all. From above there is nothing in the way.
+        ///
+        /// The pitch convention is not assumed, and just as well: setting camPitch to
+        /// the controller's own maximum does NOT look down. Measured, the view comes
+        /// out at (0.9, -0.3, 0.3) - mostly along the ship, tilted slightly down. The
+        /// reframing still makes a surface on a wing's edge selectable where the old
+        /// framing did not, so it earns its place, but it does so by moving the camera
+        /// rather than by getting above anything. The name is aspirational; the log
+        /// line reports what actually happened.
+        /// </remarks>
+        public static void LookDownAt(Vector3 world, float distance = 12f)
+        {
+            VABCamera camera = EditorDriver.fetch?.vabCamera;
+            if (camera == null) return;
+
+            camera.camHdg = 0f;
+            camera.camPitch = camera.maxPitch;
+            camera.PlaceCamera(world, distance);
+
+            Camera eye = EditorCamera.Instance?.cam;
+            Harness.Log($"CAMERA overhead at {world}, distance {distance:F1}, " +
+                        $"pitch {camera.camPitch:F3} (max {camera.maxPitch:F3}), " +
+                        $"looking {(eye == null ? "?" : eye.transform.forward.ToString())}");
+        }
+
         /// <summary>Point the editor camera at whatever is currently on the ship.</summary>
         private static void FrameShip()
         {
             VABCamera camera = EditorDriver.fetch?.vabCamera;
             if (camera == null) return;
             if (!TryGetShipBounds(out Bounds bounds)) return;
+
+            // Back to a known orientation first. camPitch and camHdg live on the
+            // editor's camera controller and outlast the scenario that changed them, so
+            // one scenario reframing the view to reach an awkward part leaves every
+            // later one aiming through a camera it did not choose - which shows up as
+            // synthetic input landing a hundred and more pixels from where it was
+            // aimed, in scenarios that never touched the camera at all.
+            camera.camPitch = camera.initialPitch;
+            camera.camHdg = camera.initialHeading;
 
             // Aim a little above centre so the ship sits in the upper half of the
             // screen, above the walkthrough panel rather than behind it.

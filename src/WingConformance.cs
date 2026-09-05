@@ -1473,6 +1473,20 @@ namespace DimensionSync
                 if (!nodes.TryGetValue(part.parent, out KspDimensionNode host)) continue;
                 nodes.TryGetValue(part, out KspDimensionNode node);
 
+                // What the part says about itself against what KSP has stored for it.
+                //
+                // attPos0 is the offset KSP re-applies when it re-seats a surface
+                // attached part, and it is not the transform: if the two disagree, the
+                // part is standing somewhere KSP does not think it belongs and will be
+                // put back the moment anything makes it re-seat. The mod's own rules
+                // were logged doing nothing at the moment a slid surface jumped back to
+                // its old station, so what moved it was not a rule.
+                if (DimensionSettings.Debug)
+                    UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} SEAT #{part.GetInstanceID()} " +
+                                          $"localPos {part.transform.localPosition}, " +
+                                          $"attPos0 {part.attPos0}, " +
+                                          $"apart {(part.transform.localPosition - part.attPos0).magnitude:F4}");
+
                 bool against = LiesAgainstItsWing(part, host, surface, wing);
                 if (against) PlacedByPlayer.Remove(part);
                 else PlacedByPlayer.Add(part);
@@ -1487,8 +1501,36 @@ namespace DimensionSync
                 // Cleared rather than overwritten, so the next rule to want a station
                 // measures the part where it now is instead of being handed a figure
                 // by somebody who guessed.
-                Covered.Remove(part);
+                // Measured NOW, not simply forgotten.
+                //
+                // Clearing it leaves the fraction to be worked out during the next
+                // propagation, and by then the wing has already changed size - so a
+                // surface that covered two thirds of a 6 m wing is measured against
+                // the 4 m one it has just become and comes out as covering all of it.
+                // Here the geometry is settled and still pre-change, which is the only
+                // moment the question has a good answer.
+                Covered[part] = DeriveFraction(surface, wing, EdgeStretchOf(wing, part));
                 LastStation.Remove(part);
+
+                // And tell KSP where the part now is.
+                //
+                // attPos0 is the offset KSP re-applies whenever it re-seats a surface
+                // attached part, and moving a part does not necessarily update it. A
+                // slid surface therefore stands in one place while KSP still believes
+                // it belongs in another - measured at 0.87 m apart on the craft this
+                // came from - and the next thing that makes KSP re-seat it puts it
+                // back, with nothing in this mod having moved it.
+                //
+                // Everything else then follows from that: the surface is back at its
+                // old station on a wing that has since changed shape, so it is judged
+                // to be off its wing, abandoned to the player, and left carrying the
+                // shape it had before. Both halves of the report - the jump back, and
+                // the skew frozen at the previous wing - are this one line.
+                if (against)
+                {
+                    part.attPos0 = part.transform.localPosition;
+                    part.attRotation0 = part.transform.localRotation;
+                }
 
                 if (DimensionSettings.Debug)
                     UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} the player moved " +

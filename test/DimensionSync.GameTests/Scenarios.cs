@@ -2929,8 +2929,13 @@ namespace DimensionSync.GameTests
             yield return context.Settled();
             EditorBuilder.PresentShip();
 
+            // Overhead, so the wing is not between the pointer and the surface on its
+            // edge. Aiming from the side found the wing every time.
+            EditorBuilder.LookDownAt(rig.Leading.transform.position, 10f);
+            yield return context.Frames(20);
+
             // Let the camera stop before anything is aimed through it.
-            Vector3 probe = rig.Trailing.transform.position;
+            Vector3 probe = rig.Leading.transform.position;
             var lastSeen = new Vector2(float.NaN, float.NaN);
             for (int settle = 0; settle < 300; settle++)
             {
@@ -3111,6 +3116,52 @@ namespace DimensionSync.GameTests
                         $"{PartFields.Get(rig.Leading, PWingModule, "sharedBaseOffsetRoot"):F3}, " +
                         $"span {PartFields.Get(rig.Leading, PWingModule, "sharedBaseLength"):F3}");
 
+            // What KSP believes about the part, not only where it is standing.
+            //
+            // This is the fault itself rather than a symptom of it. attPos0 is the
+            // offset KSP re-applies whenever it re-seats a surface attached part, and
+            // a move that leaves the two disagreeing is a move waiting to be undone -
+            // measured at 0.87 m apart on the craft this came from, and the part landed
+            // exactly on attPos0 the moment anything made KSP re-seat it.
+            //
+            // Checked directly because the undoing is not reliably reproducible: it
+            // needs KSP to re-seat, which a slide toward the ROOT provokes and a slide
+            // toward the tip does not. The disagreement is there either way, so this
+            // catches it whether or not the snap-back follows.
+            // Put the editor back as it was found: no part held, and the place tool
+            // rather than the offset one.
+            //
+            // These outlast the scenario. Leaving the offset tool armed and a part
+            // selected stopped B9 arming a drag in every later scenario that wanted
+            // one - the pointer was verified and 57 hovers were delivered, so the only
+            // thing missing was the keystroke, which was going somewhere else. Three
+            // scenarios that had been passing turned into skips, none of them the one
+            // at fault.
+            // NOT Escape. In the editor that opens the pause menu, which takes the
+            // input over and parks the pointer at the origin - every later scenario
+            // then reported Unity seeing the mouse at (0, 0), including ones that never
+            // asked for the pointer at all.
+            //
+            // Clicked on empty sky instead, well above the craft and clear of the
+            // editor's own panels, which drops the selection and nothing else.
+            SyntheticInput.MoveTo(Screen.width / 2, Mathf.RoundToInt(Screen.height * 0.08f));
+            yield return context.Frames(6);
+            SyntheticInput.Click();
+            yield return context.Frames(10);
+            SyntheticInput.Press("1");
+            yield return context.Frames(6);
+            SyntheticInput.FocusOwnWindow();
+            yield return context.Frames(4);
+            Harness.Log($"GIZMOSLIDE released the editor: selected " +
+                        $"{(EditorLogic.SelectedPart == null ? "nothing" : EditorLogic.SelectedPart.name)}, " +
+                        $"offset gizmos {UnityEngine.Object.FindObjectsOfType(typeof(EditorGizmos.GizmoOffset)).Length}");
+
+            float apart = (rig.Leading.transform.localPosition - rig.Leading.attPos0).magnitude;
+            Harness.Log($"GIZMOSLIDE seat check: localPos {rig.Leading.transform.localPosition}, " +
+                        $"attPos0 {rig.Leading.attPos0}, apart {apart:F4}");
+            context.CheckTrue($"KSP's stored offset agrees with where the surface now is "
+                              + $"(apart by {apart:F3} m)", apart <= 0.05f);
+
             context.Check("the surface stayed where the gizmo put it", after, slidTo, 0.1f);
             context.CheckTrue($"and is still being fitted to its wing (off its edge by {gapNow:F3} m)",
                               Mathf.Abs(gapNow) <= 0.2f);
@@ -3158,8 +3209,12 @@ namespace DimensionSync.GameTests
 
             // Along the wing's span, staying on the edge. Announced the way the editor
             // announces a gizmo move, which is what the mod listens for.
+            // Moved WITHOUT touching attPos0, because that is what the editor does.
+            //
+            // Setting it here would be the test doing the mod's job: KSP's own gizmo
+            // leaves attPos0 holding the old offset, which is the whole fault, and a
+            // scenario that quietly corrects it asserts nothing. It used to.
             rig.Trailing.transform.position += rig.Wing.transform.right * 1.5f;
-            rig.Trailing.attPos0 = rig.Trailing.transform.localPosition;
             GameEvents.onEditorPartEvent.Fire(ConstructionEventType.PartOffset, rig.Trailing);
 
             float slidTo = rig.Wing.transform
@@ -3183,6 +3238,11 @@ namespace DimensionSync.GameTests
                                               station: Mathf.Clamp01(after / 8f));
             Harness.Log($"SLIDEDGE after the wing changed: {slidTo:F3} -> {after:F3}, " +
                         $"gap {gap:F3}");
+
+            float apartHere = (rig.Trailing.transform.localPosition - rig.Trailing.attPos0).magnitude;
+            Harness.Log($"SLIDEDGE seat check: apart {apartHere:F4}");
+            context.CheckTrue($"KSP's stored offset agrees with where the surface now is "
+                              + $"(apart by {apartHere:F3} m)", apartHere <= 0.05f);
 
             context.Check("the surface stayed where the player slid it", after, slidTo, 0.1f);
             context.CheckTrue($"and is still on the wing's edge (off by {gap:F3} m)",
@@ -4444,7 +4504,6 @@ namespace DimensionSync.GameTests
                                      + "before - this is not a one-way door.");
 
             rig.Trailing.transform.position = rig.Wing.transform.TransformPoint(homeSeat);
-            rig.Trailing.attPos0 = rig.Trailing.transform.localPosition;
             GameEvents.onEditorPartEvent.Fire(ConstructionEventType.PartOffset, rig.Trailing);
             yield return context.Settled();
 
