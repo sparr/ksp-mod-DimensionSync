@@ -289,6 +289,13 @@ namespace DimensionSync.GameTests
                 + "assumption that decides where every station on a wing lies is worth "
                 + "holding to a measurement.");
 
+            yield return New("pwings_flap_slid_along_the_edge_keeps_its_new_place",
+                FlapSlidAlongTheEdgeKeepsItsNewPlace,
+                "A surface slid ALONG its wing's edge, then the wing edited straight "
+                + "away. Sliding leaves it flush, so the rules go on arranging it - "
+                + "and the place they arrange it to has to be where the player just "
+                + "put it, not where it used to be.");
+
             yield return New("pwings_demo_surfaces_stay_flat_through_the_joint",
                 DemoSurfacesStayFlatThroughTheJoint,
                 "The player's craft again. Its two panels thin at the same rate and "
@@ -2877,6 +2884,79 @@ namespace DimensionSync.GameTests
                 }
             }
             return any ? box.size : Vector3.zero;
+        }
+
+        /// <summary>
+        /// A surface slid along its wing keeps the place the player slid it to.
+        /// </summary>
+        /// <remarks>
+        /// Different from pulling one OFF its wing, which the rules already leave
+        /// alone. This one is still flush against the edge, so they should go on
+        /// arranging it - swept, thickened, resized with the wing - but around its NEW
+        /// station rather than the one it used to have.
+        ///
+        /// Written to reproduce a walkthrough report - a surface slid along the edge
+        /// being walked back by the next step - and it DOES NOT. It passes: the slide
+        /// is kept and the surface stays flush, with the wing edited immediately
+        /// afterwards and no settled frame in between.
+        ///
+        /// So the guess this was built on is not supported. The theory was that the
+        /// selection the report mentioned only bought time, because the bookkeeping
+        /// that notices a move runs on a settled frame and deselecting takes long
+        /// enough for one to pass. Removing the pause does not reproduce anything, so
+        /// either the gizmo being attached matters in its own right, or the difference
+        /// is in the setup: the report is of a LEADING surface on a wing whose root
+        /// chord had just been widened, slid toward the ROOT in local coordinates,
+        /// while this is a trailing surface slid outboard along a straight wing.
+        ///
+        /// Kept because a slide that is respected is worth pinning down either way,
+        /// and because it narrows where the reported fault is not.
+        /// </remarks>
+        private static IEnumerator FlapSlidAlongTheEdgeKeepsItsNewPlace(TestContext context)
+        {
+            var rig = new WingRig();
+            yield return BuildWingRig(context, rig, chord: 2f, thicknessRoot: 0.4f,
+                                      thicknessTip: 0.4f, span: 8f, oblique: false);
+            if (!rig.Ok) yield break;
+
+            float before = rig.Wing.transform
+                .InverseTransformPoint(rig.Trailing.transform.position).x;
+
+            yield return context.Say("The player slides the trailing surface 1.5 m outboard.",
+                                     "Along the edge, not off it. It stays flush, so the rules "
+                                     + "keep arranging it - around where it is now.");
+
+            // Along the wing's span, staying on the edge. Announced the way the editor
+            // announces a gizmo move, which is what the mod listens for.
+            rig.Trailing.transform.position += rig.Wing.transform.right * 1.5f;
+            rig.Trailing.attPos0 = rig.Trailing.transform.localPosition;
+            GameEvents.onEditorPartEvent.Fire(ConstructionEventType.PartOffset, rig.Trailing);
+
+            float slidTo = rig.Wing.transform
+                .InverseTransformPoint(rig.Trailing.transform.position).x;
+            Harness.Log($"SLIDEDGE moved {before:F3} -> {slidTo:F3} along the wing");
+
+            // No settled frame in between, on purpose: the walkthrough's next step
+            // follows a keystroke later, and that is when this goes wrong.
+            yield return context.Say("The wing's root chord is changed straight away.",
+                                     "No pause. The surface should be swept to the new edge "
+                                     + "WHERE IT NOW IS, and not walked back along the span.");
+
+            PartFields.Set(rig.Wing, PWingModule, "sharedBaseWidthRoot", 4f,
+                           WriteMode.DirectAssignment);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float after = rig.Wing.transform
+                .InverseTransformPoint(rig.Trailing.transform.position).x;
+            float gap = EditorBuilder.EdgeGap(rig.Wing, rig.Trailing, trailing: true,
+                                              station: Mathf.Clamp01(after / 8f));
+            Harness.Log($"SLIDEDGE after the wing changed: {slidTo:F3} -> {after:F3}, " +
+                        $"gap {gap:F3}");
+
+            context.Check("the surface stayed where the player slid it", after, slidTo, 0.1f);
+            context.CheckTrue($"and is still on the wing's edge (off by {gap:F3} m)",
+                              Mathf.Abs(gap) <= 0.15f);
         }
 
         /// <summary>
