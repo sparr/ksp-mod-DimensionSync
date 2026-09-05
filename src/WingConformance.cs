@@ -1526,11 +1526,18 @@ namespace DimensionSync
                 // to be off its wing, abandoned to the player, and left carrying the
                 // shape it had before. Both halves of the report - the jump back, and
                 // the skew frozen at the previous wing - are this one line.
-                if (against)
-                {
-                    part.attPos0 = part.transform.localPosition;
-                    part.attRotation0 = part.transform.localRotation;
-                }
+                // Whatever the verdict. Where the part physically SITS is not the same
+                // question as whether the rules go on arranging it: the player has
+                // moved it either way, and KSP's stored offset has to match reality or
+                // the next re-seat drags it back - which is just as wrong for a surface
+                // deliberately pulled off its wing as for one still on it.
+                //
+                // Doing this only in the "still against its wing" branch left the
+                // offset 1.337 m out on a surface judged to be off, which is precisely
+                // the part most likely to be snapped somewhere the player did not put
+                // it.
+                part.attPos0 = part.transform.localPosition;
+                part.attRotation0 = part.transform.localRotation;
 
                 if (DimensionSettings.Debug)
                     UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} the player moved " +
@@ -1555,7 +1562,20 @@ namespace DimensionSync
             bool trailing = IsOnTrailingEdge(part, wing);
             if (!host.TryCoverage(part, out float from, out float to)) return true;
 
-            float edge = EdgeAt(wing, trailing, (from + to) / 2f);
+            // The wing as it stood BEFORE this frame's change, because that is the wing
+            // the surface is still positioned against.
+            //
+            // This runs at the top of a propagation now, so the wing's new size is
+            // already in its fields while nothing has moved the surface to suit yet.
+            // Measured against the new edge, every surface looks stranded: on the
+            // reported craft the edge moved from 1.816 to 0.592 while the surface
+            // stayed at 3.094, and a flap sitting exactly where it belonged was
+            // declared off its wing and abandoned to the player - keeping the shape it
+            // had, which is the freezing that was reported.
+            //
+            // Same mistake as the one IsOnTrailingEdge had: a position from one moment
+            // compared against a planform from another.
+            float edge = EdgeAtBefore(wing, trailing, (from + to) / 2f);
             if (float.IsNaN(edge)) return true;
 
             float wanted = trailing ? edge - halfChord : edge + halfChord;
