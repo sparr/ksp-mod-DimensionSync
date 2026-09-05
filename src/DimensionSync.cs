@@ -520,6 +520,17 @@ namespace DimensionSync
             // value for anything this mod itself had just written - so a wing resized
             // by propagation appeared never to have changed, and the control surfaces
             // hanging off it were never moved to follow it.
+            // Any move the player made is taken account of BEFORE the rules run, not
+            // only on a quiet frame afterwards.
+            //
+            // It used to wait for a frame with nothing else happening, which is a race
+            // the player wins whenever they slide a surface and reach straight for the
+            // next step - the propagation goes first, the rules arrange the surface
+            // around the station they still remember, and the move is undone. Nothing
+            // has been written yet at this point, so the geometry here is exactly what
+            // the player left behind.
+            WingConformance.NotePlayerPlacements(_nodes);
+
             ChannelWrites.Clear();
             _valuesBeforeChange.Clear();
             WingConformance.CaptureWingValues(_nodes, _valuesBeforeChange);

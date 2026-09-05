@@ -1477,6 +1477,19 @@ namespace DimensionSync
                 if (against) PlacedByPlayer.Remove(part);
                 else PlacedByPlayer.Add(part);
 
+                // Forget where it used to sit. "Still against its wing" is not the same
+                // as "nothing happened": the player has just chosen a new place along
+                // that wing, and the rules go on arranging it around whatever station
+                // they remember. Keeping the old one is what walks a slid surface back
+                // to where it was - on the reported craft, to the exact station its
+                // opposite number still occupies, because the two started together.
+                //
+                // Cleared rather than overwritten, so the next rule to want a station
+                // measures the part where it now is instead of being handed a figure
+                // by somebody who guessed.
+                Covered.Remove(part);
+                LastStation.Remove(part);
+
                 if (DimensionSettings.Debug)
                     UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} the player moved " +
                                           $"{node?.Label ?? part.name}: " +
@@ -1505,7 +1518,17 @@ namespace DimensionSync
 
             float wanted = trailing ? edge - halfChord : edge + halfChord;
             float actual = host.Part.transform.InverseTransformPoint(BodyCentre(part)).y;
-            return Mathf.Abs(actual - wanted) <= Mathf.Abs(halfChord * 2f * DimensionSettings.FlushTolerance);
+            float tolerance = Mathf.Abs(halfChord * 2f * DimensionSettings.FlushTolerance);
+            bool against = Mathf.Abs(actual - wanted) <= tolerance;
+
+            if (DimensionSettings.Debug)
+                UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} FLUSH #{part.GetInstanceID()} " +
+                                      $"{(trailing ? "trailing" : "leading")}, covers {from:F3}..{to:F3}, " +
+                                      $"edge there {edge:F3}, wanted {wanted:F3}, actual {actual:F3}, " +
+                                      $"off by {Mathf.Abs(actual - wanted):F3} against {tolerance:F3} " +
+                                      $"-> {(against ? "ON its wing" : "OFF its wing")}");
+
+            return against;
         }
 
 

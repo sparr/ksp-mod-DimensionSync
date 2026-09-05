@@ -2948,59 +2948,55 @@ namespace DimensionSync.GameTests
             // there selects the wing - which is what happened the first time this ran.
             // Asking what the ray hits is the difference between clicking the part you
             // meant and clicking its neighbour.
-            float ownSpan = PartFields.Get(rig.Trailing, PWingModule, "sharedBaseLength");
-            int x = 0, y = 0;
-            bool aimed = false;
-            int margin = Mathf.RoundToInt(Screen.height * 0.15f);
-            // Across the surface's own chord as well as along its span. Its centreline
-            // is buried against the wing; what is exposed is the face pointing away
-            // from it, so the candidates step outward across the chord too.
-            float ownChord = PartFields.Get(rig.Trailing, PWingModule, "sharedBaseWidthRoot");
-            var stations = new List<Vector3>();
-            foreach (float along in new[] { 0f, 0.25f, -0.25f, 0.4f, -0.4f })
-                foreach (float across in new[] { 0f, -0.3f, -0.45f, 0.3f, 0.45f })
-                    stations.Add(new Vector3(along * ownSpan, across * ownChord, 0f));
-
-            foreach (Vector3 local in stations)
-            {
-                Vector3 candidate = rig.Trailing.transform.TransformPoint(local);
-                if (!SyntheticInput.ScreenPoint(candidate, out int cx, out int cy)) continue;
-                if (cy < margin || cy > Screen.height - margin) continue;
-                if (SyntheticInput.PartAt(cx, cy) != rig.Trailing) continue;
-                x = cx; y = cy; aimed = true;
-                break;
-            }
-            if (!aimed)
-            {
-                context.Skip("no point on the control surface is reachable by the pointer");
-                yield break;
-            }
+            float ownSpan = PartFields.Get(rig.Leading, PWingModule, "sharedBaseLength");
+            float ownChord = PartFields.Get(rig.Leading, PWingModule, "sharedBaseWidthRoot");
 
             SyntheticInput.FocusOwnWindow();
             SyntheticInput.Press("2");                 // the offset tool
             yield return context.Frames(10);
-            SyntheticInput.MoveTo(x, y);
-            yield return context.Frames(8);
 
-            if (!SyntheticInput.PointerAgrees(x, y, out string where))
+            // Clicked until the editor agrees. A raycast finding the surface at a point
+            // is not the same as KSP picking it there - the two disagreed on the
+            // leading surface, whose own raycast hit was answered with the wing being
+            // selected - so the only test that settles it is what the editor selects.
+            var stations = new List<Vector3>();
+            foreach (float along in new[] { 0f, 0.25f, -0.25f, 0.4f, -0.4f })
+                foreach (float across in new[] { 0f, 0.3f, -0.3f, 0.45f, -0.45f })
+                    stations.Add(new Vector3(along * ownSpan, across * ownChord, 0f));
+
+            int x = 0, y = 0;
+            bool got = false;
+            int margin = Mathf.RoundToInt(Screen.height * 0.15f);
+            foreach (Vector3 local in stations)
             {
-                context.Skip($"the pointer did not land where it was aimed - {where}");
-                yield break;
+                Vector3 candidate = rig.Leading.transform.TransformPoint(local);
+                if (!SyntheticInput.ScreenPoint(candidate, out int cx, out int cy)) continue;
+                if (cy < margin || cy > Screen.height - margin) continue;
+
+                SyntheticInput.MoveTo(cx, cy);
+                yield return context.Frames(6);
+                if (!SyntheticInput.PointerAgrees(cx, cy, out string _)) continue;
+
+                SyntheticInput.Click();
+                yield return context.Frames(15);
+                if (EditorLogic.SelectedPart != rig.Leading) continue;
+
+                x = cx; y = cy; got = true;
+                break;
             }
 
-            SyntheticInput.Click();
-            yield return context.Frames(20);
-
-            Harness.Log($"GIZMOSLIDE selected {(EditorLogic.SelectedPart == null ? "nothing" : EditorLogic.SelectedPart.name)}, " +
-                        $"offset gizmos {UnityEngine.Object.FindObjectsOfType(typeof(EditorGizmos.GizmoOffset)).Length}");
-            if (EditorLogic.SelectedPart != rig.Trailing)
+            Harness.Log($"GIZMOSLIDE selected " +
+                        $"{(EditorLogic.SelectedPart == null ? "nothing" : EditorLogic.SelectedPart.name)}, " +
+                        $"offset gizmos {UnityEngine.Object.FindObjectsOfType(typeof(EditorGizmos.GizmoOffset)).Length}, " +
+                        $"tried {stations.Count} points");
+            if (!got)
             {
-                context.Skip("clicking did not select the control surface");
+                context.Skip("no point on the leading surface could be clicked to select it");
                 yield break;
             }
 
             float before = rig.Wing.transform
-                .InverseTransformPoint(rig.Trailing.transform.position).x;
+                .InverseTransformPoint(rig.Leading.transform.position).x;
 
             yield return context.Say("Dragging the surface along the edge with the offset tool.",
                                      "The part stays selected afterwards, exactly as it does when "
@@ -3024,7 +3020,7 @@ namespace DimensionSync.GameTests
             float bestDot = 0.5f;
             foreach (Component handle in handles)
             {
-                Vector3 fromGizmo = handle.transform.position - rig.Trailing.transform.position;
+                Vector3 fromGizmo = handle.transform.position - rig.Leading.transform.position;
                 if (fromGizmo.sqrMagnitude <= 1e-6f) continue;
                 float dot = Mathf.Abs(Vector3.Dot(fromGizmo.normalized, spanWay));
                 if (dot > bestDot) { bestDot = dot; best = handle; }
@@ -3046,7 +3042,7 @@ namespace DimensionSync.GameTests
             // Onto the handle, press, drag along the span, release.
             SyntheticInput.MoveTo(hx, hy);
             yield return context.Frames(8);
-            SyntheticInput.ScreenPoint(best.transform.position + spanWay * 1.5f,
+            SyntheticInput.ScreenPoint(best.transform.position - spanWay * 1.5f,
                                        out int tx, out int ty);
             SyntheticInput.ButtonDown();
             yield return context.Frames(4);
@@ -3056,10 +3052,19 @@ namespace DimensionSync.GameTests
                 yield return context.Frames(3);
             }
             SyntheticInput.ButtonUp();
-            yield return context.Frames(10);
+
+            // As few frames as will let the release register, and no settling.
+            //
+            // This is the whole reproduction. The bookkeeping that adopts a player's
+            // move runs on a frame with nothing else happening, so any pause here hands
+            // it the chance the report does not: somebody who slides a surface and
+            // reaches straight for the next step never gives it one. Waiting ten frames
+            // and narrating in between - which is what this did - is why it kept
+            // passing.
+            yield return context.Frames(2);
 
             float slidTo = rig.Wing.transform
-                .InverseTransformPoint(rig.Trailing.transform.position).x;
+                .InverseTransformPoint(rig.Leading.transform.position).x;
             Harness.Log($"GIZMOSLIDE moved {before:F3} -> {slidTo:F3} along the wing, " +
                         $"still selected {EditorLogic.SelectedPart == rig.Trailing}");
 
@@ -3069,20 +3074,46 @@ namespace DimensionSync.GameTests
                 yield break;
             }
 
-            yield return context.Say("The wing's root chord is changed with the part still held.",
-                                     "This is the moment the report describes: the next step "
-                                     + "arriving while the surface is still selected.");
+            // Selected again if the drag let go of it. The report is specifically of the
+            // next step arriving while the surface is still held, and releasing a gizmo
+            // handle over empty space drops the selection - so without this the one
+            // condition being tested is the one not reproduced.
+            if (EditorLogic.SelectedPart != rig.Leading)
+            {
+                SyntheticInput.MoveTo(x, y);
+                yield return context.Frames(6);
+                SyntheticInput.Click();
+                yield return context.Frames(15);
+                Harness.Log($"GIZMOSLIDE reselected: " +
+                            $"{(EditorLogic.SelectedPart == null ? "nothing" : EditorLogic.SelectedPart.name)}, " +
+                            $"offset gizmos {UnityEngine.Object.FindObjectsOfType(typeof(EditorGizmos.GizmoOffset)).Length}");
+            }
+            if (EditorLogic.SelectedPart != rig.Leading)
+            {
+                context.Skip("the surface could not be left selected for the edit");
+                yield break;
+            }
 
-            PartFields.Set(rig.Wing, PWingModule, "sharedBaseWidthRoot", 5f,
+            // Straight into the edit. No Say, because narrating yields frames and a
+            // settled one is exactly what must not happen here.
+            Harness.Log("GIZMOSLIDE editing the wing immediately, no settled frame");
+            PartFields.Set(rig.Wing, PWingModule, "sharedBaseWidthRoot", 1f,
                            WriteMode.DirectAssignment);
             yield return context.Settled();
             EditorBuilder.PresentShip();
 
             float after = rig.Wing.transform
-                .InverseTransformPoint(rig.Trailing.transform.position).x;
-            Harness.Log($"GIZMOSLIDE after the wing changed: {slidTo:F3} -> {after:F3}");
+                .InverseTransformPoint(rig.Leading.transform.position).x;
+            float gapNow = EditorBuilder.EdgeGap(rig.Wing, rig.Leading, trailing: false,
+                                                 station: Mathf.Clamp01(after / 8f));
+            Harness.Log($"GIZMOSLIDE after the wing changed: {slidTo:F3} -> {after:F3}, " +
+                        $"gap {gapNow:F3}, own offsets " +
+                        $"{PartFields.Get(rig.Leading, PWingModule, "sharedBaseOffsetRoot"):F3}, " +
+                        $"span {PartFields.Get(rig.Leading, PWingModule, "sharedBaseLength"):F3}");
 
             context.Check("the surface stayed where the gizmo put it", after, slidTo, 0.1f);
+            context.CheckTrue($"and is still being fitted to its wing (off its edge by {gapNow:F3} m)",
+                              Mathf.Abs(gapNow) <= 0.2f);
         }
 
         /// <summary>
