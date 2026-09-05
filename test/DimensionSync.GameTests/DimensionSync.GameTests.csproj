@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- In-game integration harness. Loads as a KSP plugin, drives the editor and
+     writes a JSON report; see test/integration/README.md. -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net4.8</TargetFramework>
+        <LangVersion>9</LangVersion>
+        <DebugType>portable</DebugType>
+        <DebugSymbols>true</DebugSymbols>
+        <Optimize>false</Optimize>
+        <AssemblyName>DimensionSync.GameTests</AssemblyName>
+        <RootNamespace>DimensionSync.GameTests</RootNamespace>
+        <!-- Deploy into the throwaway test install, never the player's KSP. -->
+        <KSPBT_GameRoot>$(MSBuildProjectDirectory)/../../testenv/KSP</KSPBT_GameRoot>
+        <KSPBT_ModRoot>$(MSBuildProjectDirectory)/../../testenv/KSP/GameData/DimensionSyncGameTests/</KSPBT_ModRoot>
+        <KSPBT_InstallCKANDependencies>false</KSPBT_InstallCKANDependencies>
+        <KSPBT_GenerateVersionFile>false</KSPBT_GenerateVersionFile>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="KSPBuildTools" Version="1.1.1"></PackageReference>
+    </ItemGroup>
+</Project>

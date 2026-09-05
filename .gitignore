@@ -84,3 +84,22 @@ crashlytics-build.properties
 /[Aa]ssets/[Ss]treamingAssets/aa/*
 
 # End of https://www.toptal.com/developers/gitignore/api/dotnetcore,unity
+
+# DimensionSync
+# Throwaway KSP install used by test/integration (see its README).
+/testenv/
+# Build output, deployed by KSPBuildTools.
+/GameData/*/Plugins/
+# Copies of the repository-root docs, placed in the mod folder at build time so
+# a release zip carries them. The originals are what get edited.
+/GameData/*/LICENSE
+/GameData/*/README.md
+/GameData/*/CHANGELOG.md
+# Python bytecode from the integration test driver.
+__pycache__/
+
+# ...except ours. The Unity template above ignores *.csproj because Unity
+# generates its own from the project settings; this repository is not a Unity
+# project and its three project files are written by hand. Without this the mod
+# and both test projects have no build files at all in a fresh clone.
+!*.csproj
