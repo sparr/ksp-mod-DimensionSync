@@ -1362,6 +1362,9 @@ namespace DimensionSync
         /// <summary>How far each control surface has already been turned, in degrees.</summary>
         private static readonly Dictionary<Part, float> SweepApplied = new Dictionary<Part, float>();
 
+        /// <summary>Which edge each control surface was found on when it was mounted.</summary>
+        private static readonly Dictionary<Part, bool> EdgeRemembered = new Dictionary<Part, bool>();
+
         /// <summary>
         /// The finished hinge length each control surface was last given, kept across
         /// frames so a symmetry pair dealt with a frame apart can still be compared.
@@ -1424,7 +1427,13 @@ namespace DimensionSync
         /// </remarks>
         public static void NoteMovedByPlayer(Part part)
         {
-            if (part != null) JustMovedByPlayer.Add(part);
+            if (part == null) return;
+            JustMovedByPlayer.Add(part);
+
+            // Worked out again next time it is asked for. Moving a surface is the one
+            // thing that can put it on the other edge, and the geometry is settled now
+            // in a way it is not mid-propagation.
+            EdgeRemembered.Remove(part);
         }
 
         /// <summary>This part has been attached afresh, so nothing is held against it.</summary>
@@ -1433,6 +1442,7 @@ namespace DimensionSync
             if (part == null) return;
             PlacedByPlayer.Remove(part);
             JustMovedByPlayer.Remove(part);
+            EdgeRemembered.Remove(part);
         }
 
         /// <summary>
@@ -1664,6 +1674,29 @@ namespace DimensionSync
         /// no leading strip is on the wing's own midline.
         /// </remarks>
         private static bool IsOnTrailingEdge(Part part, PartModule wing)
+        {
+            // Remembered, not re-derived. Which edge a surface is on is decided when it
+            // is mounted and does not change again until somebody moves it, but the
+            // measurement that decides it reads the surface's position against its
+            // wing's mid-chord at the surface's own station along the span - and both
+            // of those move while a change is being propagated.
+            //
+            // On a symmetry pair that is enough to flip the answer. B9 copies the first
+            // side's finished LENGTH onto the second, which rebuilds it shorter about
+            // its own origin and so shifts where it sits along the span; on a swept wing
+            // the mid-chord at that new station is somewhere else, and a trailing
+            // surface is read as a leading one. It is then sheared to the wrong edge's
+            // slope, turned through the wrong angle and slid the wrong distance - one
+            // side of the pair ending 1.3 m from where its twin sits.
+            if (EdgeRemembered.TryGetValue(part, out bool known)) return known;
+
+            bool measured = MeasureTrailingEdge(part, wing);
+            EdgeRemembered[part] = measured;
+            return measured;
+        }
+
+        /// <summary>Which edge a surface lies on, measured from where it currently is.</summary>
+        private static bool MeasureTrailingEdge(Part part, PartModule wing)
         {
             Vector3 offset = wing.part.transform.InverseTransformPoint(BodyCentre(part));
             float here = Vector3.Dot(offset, ChordAxis);
