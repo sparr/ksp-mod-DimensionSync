@@ -4980,36 +4980,65 @@ namespace DimensionSync.GameTests
             ProbeFit(context, wing, flap, true, from, to, $"[{name}] trailing: as built");
             ProbeFit(context, wing, slat, false, from, to, $"[{name}] leading:  as built");
 
+            // Each fixture's own starting numbers, so the edits below can be expressed
+            // as changes TO them rather than as fixed destinations.
+            var start = new Dictionary<string, float>
+            {
+                { "sharedBaseWidthRoot", rootChord },
+                { "sharedBaseWidthTip", tipChord },
+                { "sharedBaseOffsetTip", tipOffset },
+                { "sharedBaseOffsetRoot", 0f },
+                { "sharedBaseThicknessRoot", 0.5f },
+                { "sharedBaseLength", span },
+            };
+
+            // RELATIVE to where each fixture started, which is the whole point of
+            // having several of them.
+            //
+            // These used to be absolute - root chord to 4, then to 1, sweep to 2 - and
+            // an absolute edit erases the geometry it was applied to. By the fourth
+            // step every fixture had root chord 1 and tip chord 1; by the fifth they
+            // all had the same sweep as well, and since three of them place their
+            // surfaces identically, straight, swept and tapered were running the same
+            // craft through the same eight remaining steps. The docstring's claim that
+            // several starting geometries guard against a fixture-dependent bug was
+            // true of two of the five.
+            //
+            // Scaled where a dimension has a meaningful zero to grow from, shifted
+            // where it does not: a root offset starts at zero on every fixture, so
+            // multiplying it would leave it there for ever.
             var edits = new[]
             {
-                new { Field = "sharedBaseWidthRoot",     Value = 4f,   Label = "root chord -> 4" },
-                new { Field = "sharedBaseWidthRoot",     Value = 1f,   Label = "root chord -> 1" },
-                new { Field = "sharedBaseWidthTip",      Value = 4f,   Label = "tip chord -> 4" },
-                new { Field = "sharedBaseWidthTip",      Value = 1f,   Label = "tip chord -> 1" },
-                new { Field = "sharedBaseOffsetTip",     Value = 2f,   Label = "sweep -> 2" },
-                new { Field = "sharedBaseOffsetTip",     Value = -2f,  Label = "sweep -> -2" },
-                new { Field = "sharedBaseOffsetRoot",    Value = 1f,   Label = "root offset -> 1" },
-                new { Field = "sharedBaseOffsetRoot",    Value = 0f,   Label = "root offset -> 0" },
-                new { Field = "sharedBaseThicknessRoot", Value = 1f,   Label = "root thickness -> 1" },
-                new { Field = "sharedBaseLength",        Value = 8f,   Label = "span -> 8" },
-                new { Field = "sharedBaseLength",        Value = 2f,   Label = "span -> 2" },
-                new { Field = "sharedBaseLength",        Value = 4f,   Label = "span -> 4" },
+                new { Field = "sharedBaseWidthRoot",     Scale = 2f,   Add = 0f,  Label = "root chord doubled" },
+                new { Field = "sharedBaseWidthRoot",     Scale = 0.5f, Add = 0f,  Label = "root chord halved" },
+                new { Field = "sharedBaseWidthTip",      Scale = 2f,   Add = 0f,  Label = "tip chord doubled" },
+                new { Field = "sharedBaseWidthTip",      Scale = 0.5f, Add = 0f,  Label = "tip chord halved" },
+                new { Field = "sharedBaseOffsetTip",     Scale = 1f,   Add = 2f,  Label = "swept back 2 m further" },
+                new { Field = "sharedBaseOffsetTip",     Scale = 1f,   Add = -2f, Label = "swept forward 2 m" },
+                new { Field = "sharedBaseOffsetRoot",    Scale = 1f,   Add = 1f,  Label = "root offset +1" },
+                new { Field = "sharedBaseOffsetRoot",    Scale = 1f,   Add = 0f,  Label = "root offset back" },
+                new { Field = "sharedBaseThicknessRoot", Scale = 2f,   Add = 0f,  Label = "root thickness doubled" },
+                new { Field = "sharedBaseLength",        Scale = 2f,   Add = 0f,  Label = "span doubled" },
+                new { Field = "sharedBaseLength",        Scale = 0.5f, Add = 0f,  Label = "span halved" },
+                new { Field = "sharedBaseLength",        Scale = 1f,   Add = 0f,  Label = "span back" },
             };
 
             foreach (var edit in edits)
             {
-                yield return context.Say($"[{name}] wing: {edit.Label}.",
+                float target = start[edit.Field] * edit.Scale + edit.Add;
+
+                yield return context.Say($"[{name}] wing: {edit.Label} ({target:F2}).",
                                          "Watch whether the control surfaces stay against the wing's edges, "
                                          + "and whether they stay as thick as the wing where they meet it.");
 
-                PartFields.Set(wing, PWingModule, edit.Field, edit.Value, WriteMode.DirectAssignment);
+                PartFields.Set(wing, PWingModule, edit.Field, target, WriteMode.DirectAssignment);
                 yield return context.Settled();
                 EditorBuilder.PresentShip();
 
                 float gapBack = ProbeFit(context, wing, flap, true, from, to,
-                                         $"[{name}] trailing: {edit.Label}");
+                                         $"[{name}] trailing: {edit.Label} ({target:F2})");
                 float gapFront = ProbeFit(context, wing, slat, false, from, to,
-                                          $"[{name}] leading:  {edit.Label}");
+                                          $"[{name}] leading:  {edit.Label} ({target:F2})");
 
                 context.CheckTrue($"{edit.Label}: still attached",
                                   flap.parent == wing && slat.parent == wing);

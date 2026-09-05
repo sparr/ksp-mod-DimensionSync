@@ -1179,18 +1179,42 @@ namespace DimensionSync
             // span change, which Reanchor has already accounted for by putting the
             // surface back on its station. Taking it out here as well slides the
             // surface a second time, by half the span growth, outboard.
-            // Read off the field, which holds the length after this frame's SPAN
-            // propagation and before its stretch - the baseline the slide wants.
+            // The length after this frame's SPAN change and before its stretch - asked
+            // for by name rather than read out of the field.
             //
-            // Two other forms were tried and both were worse. A remembered baseline
-            // fixed the mirrored case and broke the partial-span one, because a length
-            // the span channel legitimately changed then looked like growth that had
-            // already been accounted for. Computing it as span * fraction * already
-            // broke every span edit outright: that pairs the NEW span with the OLD
-            // stretch, so a wing whose span changes hands its surfaces a baseline that
-            // has already absorbed the change, and they never slide with it - half a
-            // metre off the wing on a 4 m span.
-            float lengthBefore = Read(surface, "sharedBaseLength");
+            // Three writers leave three different meanings in that one number. The span
+            // channel puts the new span there with the old stretch still in it, which
+            // is exactly this baseline. This rule overwrites it moments later with the
+            // finished length, stretch and all. And B9 copies a twin's finished length
+            // across a symmetry pair on its own account. Reading the field gets
+            // whichever of them went last, which is why every choice of WHEN to read it
+            // fixed one case and broke another: the field was never the wrong value at
+            // the wrong time, it was three values wearing the same name.
+            //
+            // Where the channel did not write at all - a sweep or chord edit, which
+            // changes the shape without changing the span - the baseline is simply what
+            // the surface started the frame with, which no later writer can disturb.
+            float lengthBefore;
+            if (!DimensionSyncAddon.ChannelWroteThisFrame(part, "sharedBaseLength", out lengthBefore))
+            {
+                // No channel write this frame, so the span did not change and the
+                // baseline is whatever this surface was last given.
+                //
+                // Kept across frames on purpose. The frame's own starting value is no
+                // use here: the second half of a symmetry pair is dealt with a frame
+                // LATER than the first, and B9's copy of the first side's finished
+                // length has landed by then - so what that frame started with is
+                // already the answer, and the growth reads as nothing. That is the
+                // drift, and it is why reading anything scoped to this frame cannot
+                // see it.
+                if (!SlidFor.ContainsKey(part))
+                {
+                    float was = ReadBefore(surface, "sharedBaseLength");
+                    SlidFor[part] = float.IsNaN(was) ? Read(surface, "sharedBaseLength") : was;
+                }
+                lengthBefore = SlidFor[part];
+            }
+            if (float.IsNaN(lengthBefore)) lengthBefore = Read(surface, "sharedBaseLength");
             Write(part, surface, "sharedBaseLength", hinge);
 
             // Slide it by half of whatever it grew, so the end it was anchored by stays
@@ -1207,6 +1231,9 @@ namespace DimensionSync
             // a surface whose WING changed underneath it; a flap somebody is resizing
             // by hand grows about its own middle, which is what B9 does and what they
             // are watching it do.
+            // Whatever this pass settles on becomes the baseline for the next one.
+            SlidFor[part] = hinge;
+
             float grew = ownLengthEdited ? 0f : hinge - lengthBefore;
             if (float.IsNaN(grew) || Mathf.Abs(grew) <= 1e-4f) return;
 
@@ -1334,6 +1361,12 @@ namespace DimensionSync
 
         /// <summary>How far each control surface has already been turned, in degrees.</summary>
         private static readonly Dictionary<Part, float> SweepApplied = new Dictionary<Part, float>();
+
+        /// <summary>
+        /// The finished hinge length each control surface was last given, kept across
+        /// frames so a symmetry pair dealt with a frame apart can still be compared.
+        /// </summary>
+        private static readonly Dictionary<Part, float> SlidFor = new Dictionary<Part, float>();
 
         /// <summary>Each control surface's shear at the moment it was first seen.</summary>
         private static readonly Dictionary<Part, float> ShearBaseShear = new Dictionary<Part, float>();
@@ -1570,6 +1603,7 @@ namespace DimensionSync
         public static void Forget(Dictionary<Part, KspDimensionNode> nodes)
         {
             Prune(SweepApplied, nodes);
+            Prune(SlidFor, nodes);
             Prune(ShearBaseShear, nodes);
             Prune(ShearBaseSlope, nodes);
             Prune(Covered, nodes);

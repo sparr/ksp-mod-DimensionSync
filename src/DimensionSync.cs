@@ -88,6 +88,43 @@ namespace DimensionSync
         private static readonly Dictionary<WingConformance.PartField, float> OwnWrites =
             new Dictionary<WingConformance.PartField, float>();
 
+        /// <summary>
+        /// What the dimension channels wrote this frame, before any rule adjusted it.
+        /// </summary>
+        /// <remarks>
+        /// A field's value does not say who set it or what they meant by it, and for a
+        /// control surface's length three different writers leave three different
+        /// meanings in the same number. The span channel puts the new SPAN there with
+        /// the old stretch still in it; the conformance rules then overwrite it with
+        /// the finished length, stretch included; and B9 copies a twin's finished
+        /// length across a symmetry pair without asking anybody.
+        ///
+        /// The slide that keeps a surface anchored needs the first of those and cannot
+        /// tell it from the others by looking. So the channels' writes are recorded as
+        /// they are made, and the rule asks for one by name.
+        /// </remarks>
+        private static readonly Dictionary<WingConformance.PartField, float> ChannelWrites =
+            new Dictionary<WingConformance.PartField, float>();
+
+        /// <summary>Which part of this mod made a write, so its meaning is not guessed at.</summary>
+        internal enum WriteOrigin
+        {
+            /// <summary>A conformance rule, writing a finished value.</summary>
+            Rule,
+
+            /// <summary>A dimension channel, carrying one value along a run of parts.</summary>
+            Channel,
+        }
+
+        /// <summary>
+        /// The value a dimension channel wrote for this field this frame, if it did.
+        /// </summary>
+        internal static bool ChannelWroteThisFrame(Part part, string name, out float value)
+        {
+            return ChannelWrites.TryGetValue(
+                new WingConformance.PartField { Part = part, Name = name }, out value);
+        }
+
         /// <summary>Scratch list of parts to drop from <see cref="_nodes"/>. Reused.</summary>
         private readonly List<Part> _stale = new List<Part>();
 
@@ -483,6 +520,7 @@ namespace DimensionSync
             // value for anything this mod itself had just written - so a wing resized
             // by propagation appeared never to have changed, and the control surfaces
             // hanging off it were never moved to follow it.
+            ChannelWrites.Clear();
             _valuesBeforeChange.Clear();
             WingConformance.CaptureWingValues(_nodes, _valuesBeforeChange);
 
@@ -625,6 +663,15 @@ namespace DimensionSync
         // =====================================================================
 
         /// <summary>
+        /// <summary>Remember that a dimension channel wrote this field, and what it put there.</summary>
+        private static void NoteChannelWrite(Part part, BaseField field, object value)
+        {
+            if (part == null || field == null) return;
+            if (!KspDimensionSlot.TryUnbox(value, out float number)) return;
+
+            ChannelWrites[new WingConformance.PartField { Part = part, Name = field.name }] = number;
+        }
+
         /// <summary>Remember that this mod wrote a field, and what it wrote.</summary>
         private static void NoteOwnWrite(Part part, BaseField field, object value)
         {
@@ -682,11 +729,13 @@ namespace DimensionSync
         /// nothing at all when the two match, so passing the new value makes the
         /// callback a no-op and the mesh never rebuilds.
         /// </remarks>
-        internal static void SetFieldLikeUI(Part part, PartModule module, BaseField field, object newValue)
+        internal static void SetFieldLikeUI(Part part, PartModule module, BaseField field, object newValue,
+                                            WriteOrigin origin = WriteOrigin.Rule)
         {
             if (field == null) return;
 
             NoteOwnWrite(part, field, newValue);
+            if (origin == WriteOrigin.Channel) NoteChannelWrite(part, field, newValue);
 
             object oldValue = field.GetValue(field.host);
             bool changed = !Equals(oldValue, newValue);
@@ -697,7 +746,7 @@ namespace DimensionSync
             UI_Control control = field.uiControlEditor;
             if (DimensionSettings.MirrorToSymmetryCounterparts
                 && control != null && (control.affectSymCounterparts & UI_Scene.Editor) != UI_Scene.None)
-                changed |= SetSymmetryCounterparts(part, module, field, newValue);
+                changed |= SetSymmetryCounterparts(part, module, field, newValue, origin);
 
             if (!changed) return;
 
@@ -723,7 +772,8 @@ namespace DimensionSync
         /// same field on each symmetry counterpart and fire its symmetry callback.
         /// </summary>
         /// <returns>True when at least one counterpart was holding a different value.</returns>
-        private static bool SetSymmetryCounterparts(Part part, PartModule module, BaseField field, object newValue)
+        private static bool SetSymmetryCounterparts(Part part, PartModule module, BaseField field, object newValue,
+                                                    WriteOrigin origin)
         {
             if (part == null || module == null) return false;
             if (part.symmetryCounterparts == null || part.symmetryCounterparts.Count == 0) return false;
@@ -770,6 +820,7 @@ namespace DimensionSync
                 // Recorded as OURS. This is the write that was being read back as a
                 // player edit on the mirrored half of every pair.
                 NoteOwnWrite(counterpart, counterpartField, newValue);
+                if (origin == WriteOrigin.Channel) NoteChannelWrite(counterpart, counterpartField, newValue);
                 counterpartField.SetValue(newValue, counterpartField.host);
 
                 // Stock passes the *primary* part's field and the new value here,

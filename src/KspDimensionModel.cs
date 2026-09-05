@@ -119,7 +119,13 @@ namespace DimensionSync
             object boxed = Box(wanted);
             if (boxed == null) return Value;
 
-            DimensionSyncAddon.SetFieldLikeUI(Part, Module, Field, boxed);
+            // Tagged as a CHANNEL write: this is one value being carried along a run
+            // of parts, and what it leaves in the field is the new size without any of
+            // the shaping the conformance rules apply afterwards. Rules that need that
+            // intermediate figure ask for it by name rather than reading the field and
+            // hoping nothing else has been there.
+            DimensionSyncAddon.SetFieldLikeUI(Part, Module, Field, boxed,
+                                              DimensionSyncAddon.WriteOrigin.Channel);
 
             // Read back: the mod's own change handler may have adjusted it.
             return Value;
