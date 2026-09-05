@@ -137,6 +137,22 @@ namespace DimensionSync.GameTests
                     : $"mousemove --window {window} --sync {x} {y}");
         }
 
+        /// <summary>
+        /// Throw away the cached window id so the next move looks it up again.
+        /// </summary>
+        /// <remarks>
+        /// The id is cached because resolving it costs two xdotool calls, but a cached
+        /// id that has gone stale is worse than no cache: every move is sent to a
+        /// window that is not there, xdotool reports nothing wrong, and the pointer
+        /// simply never arrives - which reads from inside the game as Unity seeing the
+        /// mouse at the origin, or still at wherever it was last put.
+        /// </remarks>
+        public static void ForgetWindow() => _gameWindow = null;
+
+        /// <summary>Whether xdotool is answering at all, for telling a stale id from a dead tool.</summary>
+        public static bool ToolResponds => Run("getactivewindow", quiet: true)
+                                           || Run("getdisplaygeometry", quiet: true);
+
         /// <summary>The X id of this process's game window, or null.</summary>
         private static string _gameWindow;
 

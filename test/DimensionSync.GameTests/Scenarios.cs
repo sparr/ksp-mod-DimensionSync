@@ -289,6 +289,19 @@ namespace DimensionSync.GameTests
                 + "assumption that decides where every station on a wing lies is worth "
                 + "holding to a measurement.");
 
+            yield return New("pwings_gizmo_along_the_edge_stays_fitted",
+                GizmoAlongTheEdgeStaysFitted,
+                "Dragged along the wing's edge with the offset gizmo in LOCAL space, "
+                + "so it stays on the wing. The rules should go on arranging it, around "
+                + "where it now is. Skipped unless the run owns the display.");
+
+            yield return New("pwings_gizmo_lifted_off_the_wing_is_left_alone",
+                GizmoLiftedOffTheWingIsLeftAlone,
+                "Dragged AWAY from the wing with the offset gizmo, far enough to be off "
+                + "it. The rules should let go of it and leave it where it was put - and "
+                + "KSP's stored offset has to follow it there, or the next re-seat drags "
+                + "it back. Skipped unless the run owns the display.");
+
             yield return New("pwings_flap_slid_with_the_gizmo_keeps_its_new_place",
                 FlapSlidWithTheGizmoKeepsItsNewPlace,
                 "The walkthrough report, driven for real: the offset tool is chosen, "
@@ -2174,20 +2187,20 @@ namespace DimensionSync.GameTests
             SyntheticInput.FocusOwnWindow();
             SyntheticInput.Press("2");              // the offset tool
             yield return context.Frames(10);
-            SyntheticInput.MoveTo(x, y);
-            yield return context.Frames(10);
+            var probePoint = new PointOutcome();
+            yield return PointAt(context, x, y, probePoint);
 
             // Checked against the GAME's idea of the pointer before clicking. A click
             // sent to a screen position when the window is not at the screen origin
             // lands somewhere else entirely, selects nothing, and leaves this scenario
             // reporting on a gizmo that was never summoned - which reads exactly like a
             // gizmo that failed to appear.
-            if (!SyntheticInput.PointerAgrees(x, y, out string where))
+            if (!probePoint.Ok)
             {
-                context.Skip($"the pointer did not land where it was aimed - {where}");
+                context.Skip($"the pointer did not land where it was aimed - {probePoint.Detail}");
                 yield break;
             }
-            Harness.Log($"GIZMO pointer verified against Unity: {where}");
+            Harness.Log($"GIZMO pointer verified against Unity: {probePoint.Detail}");
 
             SyntheticInput.Click();
             yield return context.Frames(20);
@@ -2652,9 +2665,13 @@ namespace DimensionSync.GameTests
                                      + "input handling entirely. This is the only one that can tell whether "
                                      + "a drag reaches the mod the way a typed number does.");
 
-            SyntheticInput.FocusOwnWindow();
-            SyntheticInput.MoveTo(x, y);
-            yield return context.Frames(6);
+            var aimPoint = new PointOutcome();
+            yield return PointAt(context, x, y, aimPoint);
+            if (!aimPoint.Ok)
+            {
+                context.Result.Error($"the pointer did not land where it was aimed - {aimPoint.Detail}");
+                yield break;
+            }
 
             // Pauses so a screen capture can catch each moment. Without them the whole
             // drag is over in well under a second and any recording of it is a blur of
@@ -2689,12 +2706,12 @@ namespace DimensionSync.GameTests
             // coordinates, so they agree with each other while the pointer sits
             // somewhere else entirely. Asking Unity is the only question with an
             // independent answer.
-            if (!SyntheticInput.PointerAgrees(x, y, out string where))
+            if (!aimPoint.Ok)
             {
-                context.Result.Error($"the pointer did not land where it was aimed - {where}");
+                context.Result.Error($"the pointer did not land where it was aimed - {aimPoint.Detail}");
                 yield break;
             }
-            Harness.Log($"DRAG pointer verified against Unity: {where}");
+            Harness.Log($"DRAG pointer verified against Unity: {aimPoint.Detail}");
 
             // Listeners on the part root and on every collider under it. Unity delivers
             // OnMouseOver by SendMessage to an object picked from the collider it hit,
@@ -2710,7 +2727,7 @@ namespace DimensionSync.GameTests
             {
                 context.Skip("Unity delivered no hover to the wing or to any collider under "
                              + "it, so nothing could have armed a drag. The pointer is "
-                             + $"verified in the game's own coordinates ({where}), so this is "
+                             + $"verified in the game's own coordinates ({aimPoint.Detail}), so this is "
                              + "Unity's mouse dispatch, not the aim.");
                 yield break;
             }
@@ -2894,6 +2911,137 @@ namespace DimensionSync.GameTests
         }
 
         /// <summary>
+        /// Dragged along its wing's edge, it stays on the wing and stays arranged.
+        /// </summary>
+        private static IEnumerator GizmoAlongTheEdgeStaysFitted(TestContext context)
+        {
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            var rig = new WingRig();
+            yield return BuildWingRig(context, rig, chord: 2f, thicknessRoot: 0.4f,
+                                      thicknessTip: 0.4f, span: 8f, oblique: true);
+            if (!rig.Ok) yield break;
+
+            // Widened first and lifted clear, which is the arrangement the gizmo drive
+            // is known to be able to click: a broadside, narrow wing leaves its
+            // surfaces with no face the pointer can reach.
+            PartFields.Set(rig.Wing, PWingModule, "sharedBaseWidthRoot", 4f, WriteMode.DirectAssignment);
+            rig.Fuselage.transform.position += Vector3.up * 10f;
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            // Along the EDGE, not along the span. On a tapered wing they are different
+            // directions - the first version of this dragged along transform.right and
+            // finished 0.229 m off a sloped edge, which is geometry doing exactly what
+            // it should rather than the mod misbehaving.
+            float edgeRoot = EditorBuilder.WingEdge(rig.Wing, trailing: false, station: 0f);
+            float edgeTip = EditorBuilder.WingEdge(rig.Wing, trailing: false, station: 1f);
+            float wingSpan = PartFields.Get(rig.Wing, PWingModule, "sharedBaseLength");
+            Vector3 alongEdge = rig.Wing.transform.TransformDirection(
+                new Vector3(wingSpan, edgeTip - edgeRoot, 0f).normalized);
+            Harness.Log($"GIZMOEDGE the edge runs {edgeRoot:F3} to {edgeTip:F3} over {wingSpan:F1} m");
+
+            var move = new GizmoOutcome();
+            yield return GizmoMove(context, rig.Leading, rig.Wing, alongEdge, move, localSpace: true);
+            if (!move.Moved) { context.Skip(move.Why); yield break; }
+            if (Mathf.Abs(move.After - move.Before) < 0.05f)
+            {
+                context.Skip($"the drag did not move it ({move.Before:F3} -> {move.After:F3})");
+                yield break;
+            }
+
+            // Only meaningful if the drag actually left it ON the edge. The handle that
+            // is reachable is not always the one best aligned with the wing's span, so
+            // a drag can finish part way off - and the rules letting go of it is then
+            // correct rather than a fault.
+            float onEdge = EditorBuilder.EdgeGap(rig.Wing, rig.Leading, trailing: false,
+                                                 station: Mathf.Clamp01(move.After / 8f));
+            Harness.Log($"GIZMOEDGE after the drag it is {onEdge:F3} m from its edge");
+            if (Mathf.Abs(onEdge) > 0.2f)
+            {
+                context.Skip($"the drag left it {onEdge:F3} m off its edge, so this says nothing "
+                             + "about a surface that stayed on the wing");
+                yield break;
+            }
+
+            yield return context.Say($"Slid along the edge in {move.Space} space, "
+                                     + $"{move.Before:F2} m to {move.After:F2} m along the wing.",
+                                     "It is still on the wing, so widening the wing should still "
+                                     + "carry it - around where it is now, not where it was.");
+
+            float lengthBefore = PartFields.Get(rig.Leading, PWingModule, "sharedBaseLength");
+            PartFields.Set(rig.Wing, PWingModule, "sharedBaseWidthRoot", 5f, WriteMode.DirectAssignment);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float station = rig.Wing.transform.InverseTransformPoint(rig.Leading.transform.position).x;
+            float apart = (rig.Leading.transform.localPosition - rig.Leading.attPos0).magnitude;
+            float lengthAfter = PartFields.Get(rig.Leading, PWingModule, "sharedBaseLength");
+            Harness.Log($"GIZMOEDGE station {move.After:F3} -> {station:F3}, " +
+                        $"length {lengthBefore:F3} -> {lengthAfter:F3}, apart {apart:F4}");
+
+            context.Check("it kept the place the gizmo put it", station, move.After, 0.15f);
+            context.CheckTrue($"KSP's stored offset followed it (apart {apart:F3} m)", apart <= 0.05f);
+            context.CheckTrue("it is still attached to the wing", rig.Leading.parent == rig.Wing);
+            context.CheckTrue($"and the rules are still arranging it "
+                              + $"(length {lengthBefore:F3} -> {lengthAfter:F3})",
+                              Mathf.Abs(lengthAfter - lengthBefore) > 1e-3f);
+        }
+
+        /// <summary>
+        /// Dragged off its wing, it is let go of and left exactly where it was put.
+        /// </summary>
+        private static IEnumerator GizmoLiftedOffTheWingIsLeftAlone(TestContext context)
+        {
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            var rig = new WingRig();
+            yield return BuildWingRig(context, rig, chord: 2f, thicknessRoot: 0.4f,
+                                      thicknessTip: 0.4f, span: 8f, oblique: true);
+            if (!rig.Ok) yield break;
+
+            rig.Fuselage.transform.position += Vector3.up * 10f;
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            // Away from the wing along its chord, which takes the surface off the edge
+            // rather than along it.
+            var move = new GizmoOutcome();
+            yield return GizmoMove(context, rig.Leading, rig.Wing,
+                                   rig.Wing.transform.up, move, metres: 3.5f);
+            if (!move.Moved) { context.Skip(move.Why); yield break; }
+
+            Vector3 seatAfterMove = rig.Wing.transform.InverseTransformPoint(rig.Leading.transform.position);
+            float gapAfterMove = EditorBuilder.EdgeGap(rig.Wing, rig.Leading, trailing: false);
+            Harness.Log($"GIZMOOFF moved to {seatAfterMove}, off its edge by {gapAfterMove:F3} m " +
+                        $"in {move.Space} space");
+            if (Mathf.Abs(gapAfterMove) < 0.3f)
+            {
+                context.Skip($"the drag did not take it off the wing (off by {gapAfterMove:F3} m)");
+                yield break;
+            }
+
+            yield return context.Say("Pulled off the wing, then the wing is widened.",
+                                     "Somebody has deliberately taken it off the edge, so the "
+                                     + "rules should let go: it stays exactly where it was put "
+                                     + "and does not get dragged back.");
+
+            PartFields.Set(rig.Wing, PWingModule, "sharedBaseWidthRoot", 5f, WriteMode.DirectAssignment);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            Vector3 seatNow = rig.Wing.transform.InverseTransformPoint(rig.Leading.transform.position);
+            float apart = (rig.Leading.transform.localPosition - rig.Leading.attPos0).magnitude;
+            Harness.Log($"GIZMOOFF after the wing changed: {seatAfterMove} -> {seatNow}, apart {apart:F4}");
+
+            context.Check("it stayed where it was put (along the span)", seatNow.x, seatAfterMove.x, 0.1f);
+            context.Check("and across the chord", seatNow.y, seatAfterMove.y, 0.1f);
+            context.CheckTrue($"KSP's stored offset followed it there (apart {apart:F3} m)",
+                              apart <= 0.05f);
+            context.CheckTrue("it is still attached, just not arranged", rig.Leading.parent == rig.Wing);
+        }
+
+        /// <summary>
         /// The same slide, made through the offset gizmo and left selected.
         /// </summary>
         /// <remarks>
@@ -2978,9 +3126,9 @@ namespace DimensionSync.GameTests
                 if (!SyntheticInput.ScreenPoint(candidate, out int cx, out int cy)) continue;
                 if (cy < margin || cy > Screen.height - margin) continue;
 
-                SyntheticInput.MoveTo(cx, cy);
-                yield return context.Frames(6);
-                if (!SyntheticInput.PointerAgrees(cx, cy, out string _)) continue;
+                var click = new PointOutcome();
+                yield return PointAt(context, cx, cy, click);
+                if (!click.Ok) continue;
 
                 SyntheticInput.Click();
                 yield return context.Frames(15);
@@ -3020,25 +3168,43 @@ namespace DimensionSync.GameTests
                 yield break;
             }
 
+            // The handle has to lie along the wing's span AND be somewhere the pointer
+            // can actually press it. The editor keeps its own interface along the top
+            // and bottom of the window, and a handle that projects into that strip is
+            // unpressable however well aimed: the first working version of this picked
+            // one at y=41 of 768, pressed the editor's toolbar, and reported the drag
+            // as having moved the part nowhere.
             Vector3 spanWay = rig.Wing.transform.right;
+            int edge = Mathf.RoundToInt(Screen.height * 0.12f);
             Component best = null;
-            float bestDot = 0.5f;
+            float bestDot = 0.4f;
+            int hx = 0, hy = 0;
+            var seen = new List<string>();
+
             foreach (Component handle in handles)
             {
                 Vector3 fromGizmo = handle.transform.position - rig.Leading.transform.position;
                 if (fromGizmo.sqrMagnitude <= 1e-6f) continue;
+                if (!SyntheticInput.ScreenPoint(handle.transform.position, out int cx, out int cy))
+                {
+                    seen.Add($"{handle.name} off screen");
+                    continue;
+                }
+
                 float dot = Mathf.Abs(Vector3.Dot(fromGizmo.normalized, spanWay));
-                if (dot > bestDot) { bestDot = dot; best = handle; }
-            }
-            if (best == null)
-            {
-                context.Skip($"none of the {handles.Length} gizmo handles lies along the wing's span");
-                yield break;
+                bool reachable = cy >= edge && cy <= Screen.height - edge
+                                 && cx >= edge && cx <= Screen.width - edge;
+                seen.Add($"{handle.name} at ({cx},{cy}) dot {dot:F2}{(reachable ? "" : " UNREACHABLE")}");
+                if (!reachable || dot <= bestDot) continue;
+
+                bestDot = dot; best = handle; hx = cx; hy = cy;
             }
 
-            if (!SyntheticInput.ScreenPoint(best.transform.position, out int hx, out int hy))
+            Harness.Log($"GIZMOSLIDE handles: {string.Join(" | ", seen.ToArray())}");
+            if (best == null)
             {
-                context.Skip("the gizmo handle is not on screen");
+                context.Skip($"no gizmo handle lies along the wing's span where the pointer "
+                             + $"can press it - {string.Join(", ", seen.ToArray())}");
                 yield break;
             }
             Harness.Log($"GIZMOSLIDE handle '{best.name}' at ({hx}, {hy}), " +
@@ -3047,8 +3213,23 @@ namespace DimensionSync.GameTests
             // Onto the handle, press, drag along the span, release.
             SyntheticInput.MoveTo(hx, hy);
             yield return context.Frames(8);
-            SyntheticInput.ScreenPoint(best.transform.position - spanWay * 1.5f,
-                                       out int tx, out int ty);
+            // Toward the root if that stays on screen, otherwise toward the tip. Which
+            // direction is reachable depends on how the camera happens to be framed,
+            // and a drag that leaves the usable area presses the editor's interface
+            // instead of dragging anything.
+            if (!SyntheticInput.ScreenPoint(best.transform.position - spanWay * 1.5f,
+                                            out int tx, out int ty)
+                || ty < edge || ty > Screen.height - edge
+                || tx < edge || tx > Screen.width - edge)
+            {
+                if (!SyntheticInput.ScreenPoint(best.transform.position + spanWay * 1.5f,
+                                                out tx, out ty))
+                {
+                    context.Skip("neither direction along the span projects onto the screen");
+                    yield break;
+                }
+                Harness.Log("GIZMOSLIDE dragging toward the TIP; the root direction left the window");
+            }
             SyntheticInput.ButtonDown();
             yield return context.Frames(4);
             for (int step = 1; step <= 20; step++)
@@ -4151,6 +4332,246 @@ namespace DimensionSync.GameTests
                               outer.parent == inner && trailing.parent == outer);
         }
 
+        /// <summary>What a gizmo drag managed, and why if it managed nothing.</summary>
+        private class GizmoOutcome
+        {
+            /// <summary>True only if the part actually moved.</summary>
+            public bool Moved;
+
+            /// <summary>Why it did not, for a skip that names the real reason.</summary>
+            public string Why = "not attempted";
+
+            /// <summary>Where the part sat on its wing before and after, along the span.</summary>
+            public float Before, After;
+
+            /// <summary>Which coordinate space the gizmo was in, as the gizmo reports it.</summary>
+            public string Space = "unknown";
+        }
+
+        /// <summary>
+        /// Move a part with the editor's own offset gizmo, the way a player does.
+        /// </summary>
+        /// <remarks>
+        /// Every step of this had to be found the hard way and each is load-bearing.
+        ///
+        /// The part is clicked until the EDITOR agrees it is selected, not until a
+        /// raycast says it is there - the two disagree on a surface lying against its
+        /// wing, and trusting the raycast selects the wing behind it. The pointer is
+        /// verified against the game's own idea of where it is before every click,
+        /// retrying and re-resolving the window, because a move that silently goes
+        /// nowhere leaves the click landing on whatever was under the old position. A
+        /// gizmo moves on its HANDLES rather than on the part, so a handle is what gets
+        /// grabbed - and only one far enough from the window's edges to press, because
+        /// the editor keeps its own interface there and a handle projecting into it
+        /// cannot be touched however well aimed. The button is held down across the
+        /// whole drag, since a click that presses and releases together drags nothing.
+        /// </remarks>
+        /// <param name="way">Which way to move it, in world space.</param>
+        private static IEnumerator GizmoMove(TestContext context, Part part, Part wing,
+                                             Vector3 way, GizmoOutcome outcome,
+                                             bool localSpace = false, float metres = 1.5f)
+        {
+            outcome.Moved = false;
+            if (!SyntheticInput.Available) { outcome.Why = SyntheticInput.Unavailable; yield break; }
+
+            EditorBuilder.LookDownAt(part.transform.position, 10f);
+            yield return context.Frames(25);
+
+            float ownSpan = PartFields.Get(part, PWingModule, "sharedBaseLength");
+            float ownChord = PartFields.Get(part, PWingModule, "sharedBaseWidthRoot");
+            if (float.IsNaN(ownSpan) || float.IsNaN(ownChord)) { outcome.Why = "unreadable part"; yield break; }
+
+            SyntheticInput.FocusOwnWindow();
+            SyntheticInput.Press("2");                 // the offset tool
+            yield return context.Frames(10);
+
+            // The coordinate space is TOGGLED and then read back, never assumed.
+            string spaceBefore = GizmoSpace();
+            if (localSpace)
+            {
+                SyntheticInput.Press("f");
+                yield return context.Frames(12);
+                string spaceAfter = GizmoSpace();
+                Harness.Log($"GIZMO coordinate space {spaceBefore} -> {spaceAfter}");
+                if (spaceAfter == spaceBefore)
+                    Harness.Log("GIZMO the space did not change - F is not the toggle, "
+                                + "or the keystroke went elsewhere");
+            }
+
+            var stations = new List<Vector3>();
+            foreach (float along in new[] { 0f, 0.25f, -0.25f, 0.4f, -0.4f })
+                foreach (float across in new[] { 0f, 0.3f, -0.3f, 0.45f, -0.45f })
+                    stations.Add(new Vector3(along * ownSpan, across * ownChord, 0f));
+
+            int x = 0, y = 0;
+            bool got = false;
+            var tried = new List<string>();
+            int edge = Mathf.RoundToInt(Screen.height * 0.12f);
+            foreach (Vector3 local in stations)
+            {
+                Vector3 candidate = part.transform.TransformPoint(local);
+                if (!SyntheticInput.ScreenPoint(candidate, out int cx, out int cy)) continue;
+                if (cy < edge || cy > Screen.height - edge) continue;
+
+                var click = new PointOutcome();
+                yield return PointAt(context, cx, cy, click);
+                if (!click.Ok) continue;
+
+                SyntheticInput.Click();
+                yield return context.Frames(15);
+                if (EditorLogic.SelectedPart != part)
+                {
+                    tried.Add($"({cx},{cy})->" +
+                              $"{(EditorLogic.SelectedPart == null ? "nothing" : EditorLogic.SelectedPart.name)}");
+                    continue;
+                }
+
+                x = cx; y = cy; got = true;
+                break;
+            }
+            if (!got)
+            {
+                outcome.Why = $"the part could not be clicked to select it; "
+                              + $"{tried.Count} points tried: {string.Join(", ", tried.ToArray())}";
+                yield break;
+            }
+
+            outcome.Space = GizmoSpace();
+            outcome.Before = wing.transform.InverseTransformPoint(part.transform.position).x;
+
+            Component[] handles = UnityEngine.Object.FindObjectsOfType(
+                typeof(EditorGizmos.GizmoOffsetHandle)) as Component[];
+            if (handles == null || handles.Length == 0)
+            {
+                outcome.Why = "the offset gizmo put no handles in the scene";
+                yield break;
+            }
+
+            Component best = null;
+            float bestDot = 0.4f;
+            int hx = 0, hy = 0;
+            var seen = new List<string>();
+            foreach (Component handle in handles)
+            {
+                Vector3 fromGizmo = handle.transform.position - part.transform.position;
+                if (fromGizmo.sqrMagnitude <= 1e-6f) continue;
+                if (!SyntheticInput.ScreenPoint(handle.transform.position, out int cx, out int cy))
+                { seen.Add($"{handle.name} off screen"); continue; }
+
+                float dot = Mathf.Abs(Vector3.Dot(fromGizmo.normalized, way.normalized));
+                bool reachable = cy >= edge && cy <= Screen.height - edge
+                                 && cx >= edge && cx <= Screen.width - edge;
+                seen.Add($"{handle.name} ({cx},{cy}) dot {dot:F2}{(reachable ? "" : " UNREACHABLE")}");
+                if (!reachable || dot <= bestDot) continue;
+                bestDot = dot; best = handle; hx = cx; hy = cy;
+            }
+            Harness.Log($"GIZMO handles for {part.name}: {string.Join(" | ", seen.ToArray())}");
+            if (best == null)
+            {
+                outcome.Why = $"no handle lies along that way where the pointer can press it "
+                              + $"- {string.Join(", ", seen.ToArray())}";
+                yield break;
+            }
+
+            if (!SyntheticInput.ScreenPoint(best.transform.position + way * metres, out int tx, out int ty)
+                || ty < edge || ty > Screen.height - edge || tx < edge || tx > Screen.width - edge)
+            {
+                if (!SyntheticInput.ScreenPoint(best.transform.position - way * metres, out tx, out ty))
+                { outcome.Why = "neither direction projects onto the screen"; yield break; }
+            }
+
+            var onHandle = new PointOutcome();
+            yield return PointAt(context, hx, hy, onHandle);
+            if (!onHandle.Ok) { outcome.Why = $"could not reach the handle - {onHandle.Detail}"; yield break; }
+
+            SyntheticInput.ButtonDown();
+            yield return context.Frames(4);
+            for (int step = 1; step <= 20; step++)
+            {
+                SyntheticInput.MoveTo(hx + (tx - hx) * step / 20, hy + (ty - hy) * step / 20);
+                yield return context.Frames(3);
+            }
+            SyntheticInput.ButtonUp();
+            yield return context.Frames(4);
+
+            outcome.After = wing.transform.InverseTransformPoint(part.transform.position).x;
+            outcome.Moved = true;
+            outcome.Why = $"moved with the gizmo in {outcome.Space} space";
+            Harness.Log($"GIZMO {part.name} {outcome.Space}: station {outcome.Before:F3} -> {outcome.After:F3}");
+        }
+
+        /// <summary>Which coordinate space the offset gizmo is in, as it reports it.</summary>
+        /// <remarks>
+        /// STATIC on the gizmo type, not per gizmo - the editor has one coordinate mode
+        /// and every gizmo shows it. Read as an instance field it comes back as nothing
+        /// at all, which is what "unknown" meant in the first runs of this: the mode was
+        /// being toggled and reported without ever being confirmed.
+        /// </remarks>
+        private static string GizmoSpace()
+        {
+            System.Reflection.FieldInfo field = typeof(EditorGizmos.GizmoOffset).GetField(
+                "coordSpace",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Static);
+            return field == null ? "unknown" : $"{field.GetValue(null)}";
+        }
+
+        /// <summary>Whether the pointer reached a screen position, and what happened.</summary>
+        private class PointOutcome
+        {
+            /// <summary>True when the game agrees the pointer is where it was sent.</summary>
+            public bool Ok;
+
+            /// <summary>The last comparison, for a message that names the miss.</summary>
+            public string Detail = "not attempted";
+        }
+
+        /// <summary>
+        /// Put the pointer somewhere and keep at it until the GAME agrees it is there.
+        /// </summary>
+        /// <remarks>
+        /// One move and one check is not enough, and the failures are not subtle: the
+        /// pointer arrives at the origin, or stays wherever it was last put, for whole
+        /// scenarios at a time. Both mean the move never reached the window - a cached
+        /// window id that has gone stale, or the keyboard focus having wandered - and
+        /// neither reports an error from xdotool, which cheerfully sends events to
+        /// nothing.
+        ///
+        /// So each attempt re-focuses, and a failed attempt throws the cached window id
+        /// away so the next one resolves it again. What it will not do is proceed on a
+        /// pointer that is somewhere else: everything downstream - what is under the
+        /// cursor, what a click selects, what a drag grabs - is decided by where the
+        /// pointer actually is, and a scenario that carries on regardless is measuring
+        /// a part it never touched.
+        /// </remarks>
+        private static IEnumerator PointAt(TestContext context, int x, int y, PointOutcome outcome)
+        {
+            outcome.Ok = false;
+
+            for (int attempt = 1; attempt <= 4; attempt++)
+            {
+                SyntheticInput.FocusOwnWindow();
+                SyntheticInput.MoveTo(x, y);
+                yield return context.Frames(6);
+
+                if (SyntheticInput.PointerAgrees(x, y, out string where))
+                {
+                    outcome.Ok = true;
+                    outcome.Detail = where;
+                    if (attempt > 1)
+                        Harness.Log($"POINTER reached ({x}, {y}) on attempt {attempt}");
+                    yield break;
+                }
+
+                outcome.Detail = where;
+                Harness.Log($"POINTER attempt {attempt} missed: {where}; " +
+                            $"xdotool responding {SyntheticInput.ToolResponds}, " +
+                            "looking the window up again");
+                SyntheticInput.ForgetWindow();
+                yield return context.Frames(6);
+            }
+        }
+
         /// <summary>What a synthetic drag managed, and why if it managed nothing.</summary>
         private class DragOutcome
         {
@@ -4225,15 +4646,14 @@ namespace DimensionSync.GameTests
                 yield break;
             }
 
-            SyntheticInput.FocusOwnWindow();
-            SyntheticInput.MoveTo(x, y);
-            yield return context.Frames(6);
-
-            if (!SyntheticInput.PointerAgrees(x, y, out string where))
+            var point = new PointOutcome();
+            yield return PointAt(context, x, y, point);
+            if (!point.Ok)
             {
-                outcome.Why = $"the pointer did not land where it was aimed - {where}";
+                outcome.Why = $"the pointer did not land where it was aimed - {point.Detail}";
                 yield break;
             }
+            string where = point.Detail;
 
             // A hover has to actually be delivered before a drag can arm. Without this
             // the failure reads as B9 refusing the input, when what happened is that

@@ -1165,14 +1165,29 @@ namespace DimensionSync.GameTests
             VABCamera camera = EditorDriver.fetch?.vabCamera;
             if (camera == null) return;
 
+            // A three-quarter view rather than the controller's extreme. maxPitch put
+            // the camera nearly level and left the part high in the window, which is
+            // where the editor keeps its own interface - the gizmo's handles projected
+            // into the toolbar and could not be pressed, including the one perfectly
+            // aligned with the direction being dragged.
             camera.camHdg = 0f;
-            camera.camPitch = camera.maxPitch;
+            camera.camPitch = Mathf.Clamp(0.8f, camera.minPitch, camera.maxPitch);
             camera.PlaceCamera(world, distance);
 
+            // Where the point of interest actually lands, because that is what decides
+            // whether anything attached to it can be clicked.
             Camera eye = EditorCamera.Instance?.cam;
-            Harness.Log($"CAMERA overhead at {world}, distance {distance:F1}, " +
-                        $"pitch {camera.camPitch:F3} (max {camera.maxPitch:F3}), " +
-                        $"looking {(eye == null ? "?" : eye.transform.forward.ToString())}");
+            string landed = "?";
+            if (eye != null)
+            {
+                Vector3 onScreen = eye.WorldToScreenPoint(world);
+                landed = $"({onScreen.x:F0}, {Screen.height - onScreen.y:F0}) of "
+                         + $"{Screen.width}x{Screen.height}";
+            }
+            Harness.Log($"CAMERA framed {world}, distance {distance:F1}, " +
+                        $"pitch {camera.camPitch:F3} (range {camera.minPitch:F2}..{camera.maxPitch:F2}), " +
+                        $"looking {(eye == null ? "?" : eye.transform.forward.ToString())}, " +
+                        $"target lands at {landed}");
         }
 
         /// <summary>Point the editor camera at whatever is currently on the ship.</summary>

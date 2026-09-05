@@ -520,17 +520,6 @@ namespace DimensionSync
             // value for anything this mod itself had just written - so a wing resized
             // by propagation appeared never to have changed, and the control surfaces
             // hanging off it were never moved to follow it.
-            // Any move the player made is taken account of BEFORE the rules run, not
-            // only on a quiet frame afterwards.
-            //
-            // It used to wait for a frame with nothing else happening, which is a race
-            // the player wins whenever they slide a surface and reach straight for the
-            // next step - the propagation goes first, the rules arrange the surface
-            // around the station they still remember, and the move is undone. Nothing
-            // has been written yet at this point, so the geometry here is exactly what
-            // the player left behind.
-            WingConformance.NotePlayerPlacements(_nodes);
-
             ChannelWrites.Clear();
             _valuesBeforeChange.Clear();
             WingConformance.CaptureWingValues(_nodes, _valuesBeforeChange);
@@ -551,6 +540,19 @@ namespace DimensionSync
                     Name = edit.Slot.Field.name,
                 }] = edit.Slot.Descriptor.ToFieldUnits(edit.OldValue);
             }
+
+            // Only now can a player's move be judged, because judging it asks what the
+            // wing looked like BEFORE this frame - and that record is what has just
+            // been built. Asked any earlier it reads whatever the last frame left
+            // behind: on the reported craft it saw a wing of constant 2 m chord, from
+            // several steps back, and reported the edge as being in the same place at
+            // every station. A surface sitting exactly where it belonged came out 1.05 m
+            // from an edge that was not there, was declared off its wing, and stopped
+            // being arranged at all.
+            //
+            // Still ahead of every rule that writes anything, which is what stops the
+            // move being discarded - that part was right, it was just done too soon.
+WingConformance.NotePlayerPlacements(_nodes, midChange: true);
             // Anything that bends the line a wing's edges run along, or the plane its
             // surfaces lie in, starts a carry-through into whatever is bolted to its
             // tip.

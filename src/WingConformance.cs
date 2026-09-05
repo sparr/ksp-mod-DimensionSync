@@ -1458,7 +1458,8 @@ namespace DimensionSync
         /// A part moved BACK against its wing clears its own flag here, so this is not a
         /// one-way door: put a flap back and the rules take it up again.
         /// </remarks>
-        public static void NotePlayerPlacements(Dictionary<Part, KspDimensionNode> nodes)
+        public static void NotePlayerPlacements(Dictionary<Part, KspDimensionNode> nodes,
+                                               bool midChange = false)
         {
             if (JustMovedByPlayer.Count == 0) return;
 
@@ -1487,7 +1488,7 @@ namespace DimensionSync
                                           $"attPos0 {part.attPos0}, " +
                                           $"apart {(part.transform.localPosition - part.attPos0).magnitude:F4}");
 
-                bool against = LiesAgainstItsWing(part, host, surface, wing);
+                bool against = LiesAgainstItsWing(part, host, surface, wing, midChange);
                 if (against) PlacedByPlayer.Remove(part);
                 else PlacedByPlayer.Add(part);
 
@@ -1550,7 +1551,8 @@ namespace DimensionSync
 
         /// <summary>Whether a control surface is lying against the wing it is attached to.</summary>
         private static bool LiesAgainstItsWing(Part part, KspDimensionNode host,
-                                               PartModule surface, PartModule wing)
+                                               PartModule surface, PartModule wing,
+                                               bool midChange = false)
         {
             float widthRoot = Read(surface, "sharedBaseWidthRoot");
             float widthTip = Read(surface, "sharedBaseWidthTip");
@@ -1562,8 +1564,16 @@ namespace DimensionSync
             bool trailing = IsOnTrailingEdge(part, wing);
             if (!host.TryCoverage(part, out float from, out float to)) return true;
 
-            // The wing as it stood BEFORE this frame's change, because that is the wing
-            // the surface is still positioned against.
+            // Which wing to measure against depends on whether anything is changing.
+            //
+            // Mid-propagation the wing's new size is already in its fields while nothing
+            // has moved the surface to suit, so the surface belongs to the wing as it
+            // was and has to be judged against that. On a SETTLED frame there is no
+            // change in flight, the two are the same wing, and the pre-change record is
+            // simply whatever the last propagation left behind - which on this fixture
+            // was a wing of constant 2 m chord from before it was widened, reporting the
+            // edge in the same place at every station and stranding a surface that was
+            // sitting exactly where it belonged.
             //
             // This runs at the top of a propagation now, so the wing's new size is
             // already in its fields while nothing has moved the surface to suit yet.
@@ -1575,7 +1585,9 @@ namespace DimensionSync
             //
             // Same mistake as the one IsOnTrailingEdge had: a position from one moment
             // compared against a planform from another.
-            float edge = EdgeAtBefore(wing, trailing, (from + to) / 2f);
+            float edge = midChange
+                ? EdgeAtBefore(wing, trailing, (from + to) / 2f)
+                : EdgeAt(wing, trailing, (from + to) / 2f);
             if (float.IsNaN(edge)) return true;
 
             float wanted = trailing ? edge - halfChord : edge + halfChord;
@@ -1585,7 +1597,9 @@ namespace DimensionSync
 
             if (DimensionSettings.Debug)
                 UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} FLUSH #{part.GetInstanceID()} " +
-                                      $"{(trailing ? "trailing" : "leading")}, covers {from:F3}..{to:F3}, " +
+                                      $"{(trailing ? "trailing" : "leading")} " +
+                                      $"({(midChange ? "mid-change" : "settled")}), " +
+                                      $"covers {from:F3}..{to:F3}, " +
                                       $"edge there {edge:F3}, wanted {wanted:F3}, actual {actual:F3}, " +
                                       $"off by {Mathf.Abs(actual - wanted):F3} against {tolerance:F3} " +
                                       $"-> {(against ? "ON its wing" : "OFF its wing")}");
