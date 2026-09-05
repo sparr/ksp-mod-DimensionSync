@@ -289,6 +289,13 @@ namespace DimensionSync.GameTests
                 + "assumption that decides where every station on a wing lies is worth "
                 + "holding to a measurement.");
 
+            yield return New("pwings_flap_slid_with_the_gizmo_keeps_its_new_place",
+                FlapSlidWithTheGizmoKeepsItsNewPlace,
+                "The walkthrough report, driven for real: the offset tool is chosen, "
+                + "the surface is clicked, its handle is dragged along the edge, and "
+                + "the wing is edited with the part STILL SELECTED. Skipped unless the "
+                + "run owns the display.");
+
             yield return New("pwings_flap_slid_along_the_edge_keeps_its_new_place",
                 FlapSlidAlongTheEdgeKeepsItsNewPlace,
                 "A surface slid ALONG its wing's edge, then the wing edited straight "
@@ -2884,6 +2891,198 @@ namespace DimensionSync.GameTests
                 }
             }
             return any ? box.size : Vector3.zero;
+        }
+
+        /// <summary>
+        /// The same slide, made through the offset gizmo and left selected.
+        /// </summary>
+        /// <remarks>
+        /// The version that matches the report. Sliding a surface by writing its
+        /// transform - which is what the scenario below does - does not reproduce
+        /// anything, so what is left is either the gizmo itself or the fact that the
+        /// part is still held when the next edit lands. This drives the editor's own
+        /// tool with the pointer and leaves the part selected, which is the only way to
+        /// tell those two apart from the outside.
+        ///
+        /// There is no way for a player to slide an attached part WITHOUT the gizmo -
+        /// grabbing it detaches and remounts it instead - so a reproduction that avoids
+        /// the gizmo was never going to settle the question.
+        /// </remarks>
+        private static IEnumerator FlapSlidWithTheGizmoKeepsItsNewPlace(TestContext context)
+        {
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            var rig = new WingRig();
+            // Mounted obliquely, so the wing is seen at an angle and the surface on its
+            // edge is presented to the camera rather than hidden behind it. Broadside,
+            // no point on the surface can be clicked at all.
+            yield return BuildWingRig(context, rig, chord: 2f, thicknessRoot: 0.4f,
+                                      thicknessTip: 0.4f, span: 8f, oblique: true);
+            if (!rig.Ok) yield break;
+
+            // Widened first, so the edge the surface sits on is swept - the state the
+            // report was made from.
+            PartFields.Set(rig.Wing, PWingModule, "sharedBaseWidthRoot", 4f,
+                           WriteMode.DirectAssignment);
+            yield return context.Settled();
+            rig.Fuselage.transform.position += Vector3.up * 10f;
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            // Let the camera stop before anything is aimed through it.
+            Vector3 probe = rig.Trailing.transform.position;
+            var lastSeen = new Vector2(float.NaN, float.NaN);
+            for (int settle = 0; settle < 300; settle++)
+            {
+                if (SyntheticInput.ScreenPoint(probe, out int px, out int py))
+                {
+                    var now = new Vector2(px, py);
+                    if ((now - lastSeen).sqrMagnitude <= 1f) break;
+                    lastSeen = now;
+                }
+                yield return context.Frames(5);
+            }
+
+            // A point the pointer can actually reach the SURFACE at. Its origin sits
+            // against the wing and is hidden behind it from most angles, so aiming
+            // there selects the wing - which is what happened the first time this ran.
+            // Asking what the ray hits is the difference between clicking the part you
+            // meant and clicking its neighbour.
+            float ownSpan = PartFields.Get(rig.Trailing, PWingModule, "sharedBaseLength");
+            int x = 0, y = 0;
+            bool aimed = false;
+            int margin = Mathf.RoundToInt(Screen.height * 0.15f);
+            // Across the surface's own chord as well as along its span. Its centreline
+            // is buried against the wing; what is exposed is the face pointing away
+            // from it, so the candidates step outward across the chord too.
+            float ownChord = PartFields.Get(rig.Trailing, PWingModule, "sharedBaseWidthRoot");
+            var stations = new List<Vector3>();
+            foreach (float along in new[] { 0f, 0.25f, -0.25f, 0.4f, -0.4f })
+                foreach (float across in new[] { 0f, -0.3f, -0.45f, 0.3f, 0.45f })
+                    stations.Add(new Vector3(along * ownSpan, across * ownChord, 0f));
+
+            foreach (Vector3 local in stations)
+            {
+                Vector3 candidate = rig.Trailing.transform.TransformPoint(local);
+                if (!SyntheticInput.ScreenPoint(candidate, out int cx, out int cy)) continue;
+                if (cy < margin || cy > Screen.height - margin) continue;
+                if (SyntheticInput.PartAt(cx, cy) != rig.Trailing) continue;
+                x = cx; y = cy; aimed = true;
+                break;
+            }
+            if (!aimed)
+            {
+                context.Skip("no point on the control surface is reachable by the pointer");
+                yield break;
+            }
+
+            SyntheticInput.FocusOwnWindow();
+            SyntheticInput.Press("2");                 // the offset tool
+            yield return context.Frames(10);
+            SyntheticInput.MoveTo(x, y);
+            yield return context.Frames(8);
+
+            if (!SyntheticInput.PointerAgrees(x, y, out string where))
+            {
+                context.Skip($"the pointer did not land where it was aimed - {where}");
+                yield break;
+            }
+
+            SyntheticInput.Click();
+            yield return context.Frames(20);
+
+            Harness.Log($"GIZMOSLIDE selected {(EditorLogic.SelectedPart == null ? "nothing" : EditorLogic.SelectedPart.name)}, " +
+                        $"offset gizmos {UnityEngine.Object.FindObjectsOfType(typeof(EditorGizmos.GizmoOffset)).Length}");
+            if (EditorLogic.SelectedPart != rig.Trailing)
+            {
+                context.Skip("clicking did not select the control surface");
+                yield break;
+            }
+
+            float before = rig.Wing.transform
+                .InverseTransformPoint(rig.Trailing.transform.position).x;
+
+            yield return context.Say("Dragging the surface along the edge with the offset tool.",
+                                     "The part stays selected afterwards, exactly as it does when "
+                                     + "somebody slides it and then reaches for the next step.");
+
+            // Grabbed by a HANDLE. An offset gizmo does not move a part when the part
+            // itself is dragged - the first attempt at this pulled on the surface and
+            // moved it nowhere. The handles are separate objects arranged along the
+            // gizmo's axes, and the one to pull is whichever points most nearly along
+            // the wing's span.
+            Component[] handles = UnityEngine.Object.FindObjectsOfType(
+                typeof(EditorGizmos.GizmoOffsetHandle)) as Component[];
+            if (handles == null || handles.Length == 0)
+            {
+                context.Skip("the offset gizmo put no handles in the scene");
+                yield break;
+            }
+
+            Vector3 spanWay = rig.Wing.transform.right;
+            Component best = null;
+            float bestDot = 0.5f;
+            foreach (Component handle in handles)
+            {
+                Vector3 fromGizmo = handle.transform.position - rig.Trailing.transform.position;
+                if (fromGizmo.sqrMagnitude <= 1e-6f) continue;
+                float dot = Mathf.Abs(Vector3.Dot(fromGizmo.normalized, spanWay));
+                if (dot > bestDot) { bestDot = dot; best = handle; }
+            }
+            if (best == null)
+            {
+                context.Skip($"none of the {handles.Length} gizmo handles lies along the wing's span");
+                yield break;
+            }
+
+            if (!SyntheticInput.ScreenPoint(best.transform.position, out int hx, out int hy))
+            {
+                context.Skip("the gizmo handle is not on screen");
+                yield break;
+            }
+            Harness.Log($"GIZMOSLIDE handle '{best.name}' at ({hx}, {hy}), " +
+                        $"{handles.Length} handles in the scene");
+
+            // Onto the handle, press, drag along the span, release.
+            SyntheticInput.MoveTo(hx, hy);
+            yield return context.Frames(8);
+            SyntheticInput.ScreenPoint(best.transform.position + spanWay * 1.5f,
+                                       out int tx, out int ty);
+            SyntheticInput.ButtonDown();
+            yield return context.Frames(4);
+            for (int step = 1; step <= 20; step++)
+            {
+                SyntheticInput.MoveTo(hx + (tx - hx) * step / 20, hy + (ty - hy) * step / 20);
+                yield return context.Frames(3);
+            }
+            SyntheticInput.ButtonUp();
+            yield return context.Frames(10);
+
+            float slidTo = rig.Wing.transform
+                .InverseTransformPoint(rig.Trailing.transform.position).x;
+            Harness.Log($"GIZMOSLIDE moved {before:F3} -> {slidTo:F3} along the wing, " +
+                        $"still selected {EditorLogic.SelectedPart == rig.Trailing}");
+
+            if (Mathf.Abs(slidTo - before) < 0.05f)
+            {
+                context.Skip($"the gizmo drag did not move the surface ({before:F3} -> {slidTo:F3})");
+                yield break;
+            }
+
+            yield return context.Say("The wing's root chord is changed with the part still held.",
+                                     "This is the moment the report describes: the next step "
+                                     + "arriving while the surface is still selected.");
+
+            PartFields.Set(rig.Wing, PWingModule, "sharedBaseWidthRoot", 5f,
+                           WriteMode.DirectAssignment);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float after = rig.Wing.transform
+                .InverseTransformPoint(rig.Trailing.transform.position).x;
+            Harness.Log($"GIZMOSLIDE after the wing changed: {slidTo:F3} -> {after:F3}");
+
+            context.Check("the surface stayed where the gizmo put it", after, slidTo, 0.1f);
         }
 
         /// <summary>

@@ -201,6 +201,18 @@ namespace DimensionSync.GameTests
             return offBy <= 2f;
         }
 
+        /// <summary>Press and hold the left button, for a drag that spans many frames.</summary>
+        /// <remarks>
+        /// A click is press and release together, which is no use for dragging: the
+        /// thing being pulled has to see the button held down across every frame the
+        /// pointer moves. KSP's offset gizmo in particular only moves a part while one
+        /// of its handles is held.
+        /// </remarks>
+        public static void ButtonDown() => Run("mousedown 1");
+
+        /// <summary>Release the left button.</summary>
+        public static void ButtonUp() => Run("mouseup 1");
+
         /// <summary>Click at the pointer's current position.</summary>
         public static void Click() => Run("click --clearmodifiers 1");
 
