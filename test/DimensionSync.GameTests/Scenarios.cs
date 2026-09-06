@@ -170,6 +170,15 @@ namespace DimensionSync.GameTests
                 + "that length through the field API where our hook can see it, or "
                 + "around it the way B9 does. Skipped unless the run owns the display.");
 
+            yield return New("rolib_typed_diameter_reaches_the_tank", ROLibTypedDiameterReachesTheTank,
+                "An RO tank given an exact diameter by TYPING it. The window's \"#\" "
+                + "button swaps its sliders for text boxes - stock offers that only on "
+                + "float ranges, and KSPCommunityFixes extends it to the float-edit "
+                + "controls the procedural mods use - so the pointer turns it on, "
+                + "clicks into the box, and the keyboard does the rest. The only "
+                + "scenario where a dimension arrives as typed characters. Skipped "
+                + "unless the run owns the display.");
+
             yield return New("rolib_idle_stack_is_left_alone", ROLibIdleStackIsLeftAlone,
                 "Two RO tanks of deliberately different sizes, left alone. ROLib "
                 + "rewrites length from diameter on its own account, which is a write "
@@ -6948,6 +6957,159 @@ namespace DimensionSync.GameTests
                           PartFields.Get(stack.Parts[0], ROModule, "currentLength"), lowerLength);
             context.Check("upper tank length unchanged",
                           PartFields.Get(stack.Parts[1], ROModule, "currentLength"), upperLength);
+        }
+
+        /// <summary>
+        /// Type an exact diameter into an RO tank's window and watch it arrive.
+        /// </summary>
+        /// <remarks>
+        /// The other input scenarios all click something. This one is the only place a
+        /// value arrives as characters from a keyboard, which is a different path
+        /// through KSP entirely: the text box validates what is typed, parses it on
+        /// Enter, and pushes it through the field the same way the buttons do. A mod
+        /// that reacts to slider clicks but not to typed entry would pass everything
+        /// else here.
+        ///
+        /// It also lets the value be CHOSEN rather than accumulated. Clicking an
+        /// increment gets you wherever the control's step lands; typing 3.7 asks for
+        /// 3.7, so this can check a number instead of a relationship.
+        /// </remarks>
+        private static IEnumerator ROLibTypedDiameterReachesTheTank(TestContext context)
+        {
+            string tankName = ROTankPart();
+            if (tankName == null) { context.Skip("no ROTanks part installed"); yield break; }
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            Part tank = EditorBuilder.Spawn(tankName);
+            if (tank == null) { context.Skip("could not spawn an RO tank"); yield break; }
+            yield return context.Frames(6);
+            PartFields.Set(tank, ROModule, ROField, 2f, WriteMode.PartActionWindow);
+            EditorBuilder.SetRoot(tank);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float lengthBefore = PartFields.Get(tank, ROModule, "currentLength");
+
+            if (!PartActionWindow.Open(tank, out string why)) { context.Skip(why); yield break; }
+            yield return context.Frames(30);
+
+            // --- turn typed entry on by clicking "#" ------------------------------
+            RectTransform toggle = PartActionWindow.NumericToggle(tank);
+            if (toggle == null)
+            {
+                context.Result.Fail("the window has no numeric toggle to click");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+            if (!SyntheticInput.ScreenPointOfUI(toggle, out int tx, out int ty))
+            {
+                context.Skip("the numeric toggle is not on screen");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            yield return context.Say("Clicking the window's \"#\" button.",
+                                     "It swaps the sliders for text boxes you can type into.");
+
+            var onToggle = new PointOutcome();
+            yield return PointAt(context, tx, ty, onToggle);
+            if (!onToggle.Ok)
+            {
+                context.Skip($"the pointer did not reach the toggle: {onToggle.Detail}");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+            Harness.Log($"ROTYPE toggle at ({tx}, {ty}) over {PartActionWindow.WhatIsUnder(tx, ty)}");
+            Harness.Log($"ROTYPE before click: numeric={GameSettings.PAW_NUMERIC_SLIDERS}, " +
+                        $"{PartActionWindow.DescribeItem(tank, ROModule, ROField)}");
+            SyntheticInput.Click();
+            yield return context.Frames(30);
+            Harness.Log($"ROTYPE after click: numeric={GameSettings.PAW_NUMERIC_SLIDERS}, " +
+                        $"{PartActionWindow.DescribeItem(tank, ROModule, ROField)}");
+
+            // Waited for rather than assumed. The container is switched on in response
+            // to an event, and a fixed pause got the box on one run and missed it on
+            // the one before - which reported as "this install has no numeric input"
+            // and would have been believed.
+            RectTransform box = null;
+            for (int settle = 0; settle < 60 && box == null; settle++)
+            {
+                box = PartActionWindow.TypedEntryFor(tank, ROModule, ROField);
+                if (box == null) yield return context.Frames(5);
+            }
+            if (box == null)
+            {
+                // Worth telling apart: no KSPCommunityFixes means no text box on a
+                // float edit at all, which is a missing feature rather than a fault.
+                context.Skip("no text box appeared - this install may not have "
+                             + "KSPCommunityFixes' UIFloatEditNumericInput");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            // --- click into it and type -------------------------------------------
+            if (!SyntheticInput.ScreenPointOfUI(box, out int ix, out int iy))
+            {
+                context.Skip("the text box is not on screen");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            yield return context.Say("Typing 3.7 into the diameter box and pressing Enter.",
+                                     "An exact number, chosen rather than stepped to. The tank should "
+                                     + "become 3.7 m across, and should lengthen with it.");
+
+            var onBox = new PointOutcome();
+            yield return PointAt(context, ix, iy, onBox);
+            if (!onBox.Ok)
+            {
+                context.Skip($"the pointer did not reach the text box: {onBox.Detail}");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+            Harness.Log($"ROTYPE box at ({ix}, {iy}) over {PartActionWindow.WhatIsUnder(ix, iy)}");
+
+            SyntheticInput.Click();
+            yield return context.Frames(10);
+            SyntheticInput.Press("ctrl+a");          // over whatever it already holds
+            yield return context.Frames(4);
+            SyntheticInput.TypeText("3.7");
+            yield return context.Frames(10);
+            SyntheticInput.Press("Return");          // onEndEdit is what parses it
+            yield return context.Settled();
+
+            float diameterAfter = PartFields.Get(tank, ROModule, ROField);
+            float lengthAfter = PartFields.Get(tank, ROModule, "currentLength");
+            string sawDiameter = ForeignWriteSeen(tank, ROField);
+            string sawLength = ForeignWriteSeen(tank, "currentLength");
+            Harness.Log($"ROTYPE after: diameter {diameterAfter:F4} length " +
+                        $"{lengthBefore:F4} -> {lengthAfter:F4}; hook saw {ROField} = " +
+                        $"{sawDiameter ?? "nothing"}, currentLength = {sawLength ?? "nothing"}");
+
+            context.Check("the typed diameter reached the tank", diameterAfter, 3.7f);
+            context.CheckTrue($"the length followed it ({lengthBefore:F4} -> {lengthAfter:F4})",
+                              Mathf.Abs(lengthAfter - lengthBefore) > 0.01f);
+            context.CheckTrue("the hook saw the typed write to the diameter", sawDiameter != null);
+
+            // The same coverage gap the clicked scenario measures, reached by a
+            // different route: however the diameter arrives, ROLib's answering write
+            // to the length goes around KSP's field API.
+            context.CheckTrue("ROLib's length write bypasses the field API here too "
+                              + $"(hook saw: {sawLength ?? "nothing"})",
+                              sawLength == null);
+
+            // Left on, the "#" state is written to settings.cfg and inherited by every
+            // later scenario AND by the next run of the suite.
+            yield return PointAt(context, tx, ty, onToggle);
+            if (onToggle.Ok) SyntheticInput.Click();
+            yield return context.Frames(10);
+            PartActionWindow.CloseAll();
+            yield return context.Frames(4);
+
+            // Checked, not hoped for. This setting is written to settings.cfg, so a
+            // leak here outlives the scenario, the suite and the run.
+            context.CheckTrue("typed entry was switched back off afterwards",
+                              !GameSettings.PAW_NUMERIC_SLIDERS);
         }
 
         /// <summary>

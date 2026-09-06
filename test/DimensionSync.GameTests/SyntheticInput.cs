@@ -235,6 +235,15 @@ namespace DimensionSync.GameTests
         /// <summary>Click the right button, which is what opens a part action window.</summary>
         public static void RightClick() => Run("click --clearmodifiers 3");
 
+        /// <summary>Type text, as at a keyboard.</summary>
+        /// <param name="text">What to type. Digits and a decimal point, here.</param>
+        /// <remarks>
+        /// A real key-by-key send rather than pasting: the input field this is aimed
+        /// at validates as it goes, and a value that arrives all at once does not
+        /// exercise that.
+        /// </remarks>
+        public static void TypeText(string text) => Run($"type --clearmodifiers -- '{text}'");
+
         /// <summary>
         /// Where a piece of user interface sits on screen, in the same top-left
         /// coordinates the pointer is driven in.

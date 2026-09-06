@@ -126,6 +126,50 @@ namespace DimensionSync.GameTests
             return string.Join(" / ", names.ToArray());
         }
 
+        /// <summary>
+        /// The window's "#" toggle, which swaps its sliders for typed entry.
+        /// </summary>
+        /// <param name="part">The part whose window to look in.</param>
+        /// <remarks>
+        /// Stock only offers this on UI_FloatRange items. KSPCommunityFixes'
+        /// UIFloatEditNumericInput extends it to UI_FloatEdit, which is what the
+        /// procedural mods use for their dimensions - so on an install with that fix
+        /// there IS a keyboard path to a tank's diameter, and without it there is not.
+        /// </remarks>
+        public static RectTransform NumericToggle(Part part)
+        {
+            return WindowFor(part)?.toggleNumeric?.transform as RectTransform;
+        }
+
+        /// <summary>
+        /// The text box a field's item shows once "#" is on, or null if it has none.
+        /// </summary>
+        /// <param name="part">The part whose window to search.</param>
+        /// <param name="moduleName">The module class the field belongs to.</param>
+        /// <param name="fieldName">The field's name.</param>
+        /// <remarks>
+        /// Found by type NAME rather than by type, because the component that carries
+        /// it belongs to KSPCommunityFixes and this assembly does not link against it.
+        /// Only a box that is actually showing counts: the container is built up front
+        /// and switched on when the toggle goes on, so an inactive one means the toggle
+        /// has not taken effect yet rather than that there is nothing to type into.
+        /// </remarks>
+        public static RectTransform TypedEntryFor(Part part, string moduleName, string fieldName)
+        {
+            UIPartActionFloatEdit edit = FloatEditFor(part, moduleName, fieldName);
+            if (edit == null) return null;
+
+            Component[] children = edit.GetComponentsInChildren<Component>(true);
+            for (int i = 0; i < children.Length; i++)
+            {
+                Component child = children[i];
+                if (child == null || child.GetType().Name != "TMP_InputField") continue;
+                if (!child.gameObject.activeInHierarchy) continue;
+                return child.transform as RectTransform;
+            }
+            return null;
+        }
+
         /// <summary>Where each of a float-edit's buttons is, and what is over it.</summary>
         /// <param name="edit">The widget to survey.</param>
         /// <remarks>
@@ -153,6 +197,29 @@ namespace DimensionSync.GameTests
                 into.Add($"{name} ({x},{y}) over {WhatIsUnder(x, y)}");
             else
                 into.Add($"{name} off screen");
+        }
+
+        /// <summary>What the window is showing for a field, and what it is made of.</summary>
+        /// <param name="part">The part whose window to search.</param>
+        /// <param name="moduleName">The module class the field belongs to.</param>
+        /// <param name="fieldName">The field's name.</param>
+        public static string DescribeItem(Part part, string moduleName, string fieldName)
+        {
+            UIPartActionFloatEdit edit = FloatEditFor(part, moduleName, fieldName);
+            if (edit == null) return "no item";
+
+            var kinds = new List<string>();
+            Component[] children = edit.GetComponentsInChildren<Component>(true);
+            for (int i = 0; i < children.Length; i++)
+            {
+                if (children[i] == null) continue;
+                string kind = children[i].GetType().Name;
+                if (kind != "TMP_InputField" && kind != "InputField") continue;
+                kinds.Add($"{kind} active={children[i].gameObject.activeInHierarchy}");
+            }
+
+            return $"item is {edit.GetType().Name}; " +
+                   $"text boxes: {(kinds.Count == 0 ? "none" : string.Join(", ", kinds.ToArray()))}";
         }
 
         /// <summary>How a float-edit control is set up, for a log line.</summary>
