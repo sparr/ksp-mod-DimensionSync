@@ -220,10 +220,18 @@ namespace DimensionSync.GameTests
             // for the rest of the session.
             //
             // That is B9's bug, not ours, but this is what provokes it: typing leaves
-            // the pointer in the middle of the window. It cost three gizmo scenarios,
-            // which then reported "the part could not be clicked to select it" after
-            // trying twenty-five points - a SKIP, so the suite stayed green while
-            // three scenarios silently stopped running.
+            // the pointer in the middle of the window.
+            //
+            // Released here rather than by clicking B9's own close button, which does
+            // release it properly. This mirrors what that button's handler does. The
+            // difference matters only if B9 ever changes its teardown, at which point
+            // this copy drifts and clicking the real button would not have.
+            //
+            // Recorded honestly: three gizmo scenarios were skipping when this was
+            // written and this looked like the cause, but they are equally explained
+            // by two sessions sharing one display, which was also true at the time.
+            // The leak is plain in B9's source; that it ever broke anything here is
+            // not established.
             EditorLogic.fetch?.Unlock("WingProceduralWindow");
 
             SetNumeric(false);
