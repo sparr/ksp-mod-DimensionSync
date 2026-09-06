@@ -170,6 +170,14 @@ namespace DimensionSync.GameTests
                 + "that length through the field API where our hook can see it, or "
                 + "around it the way B9 does. Skipped unless the run owns the display.");
 
+            yield return New("pp_typed_dimensions_reach_the_part", PPTypedDimensionsReachThePart,
+                "Every kind of dimension ProceduralParts has, typed in through the "
+                + "window's \"#\" boxes: a cylinder's single diameter and its length, "
+                + "then the same part as a cone, whose two ends are separate fields. "
+                + "One scenario in several steps rather than several scenarios, "
+                + "because the fixture and the open window are the expensive part. "
+                + "Skipped unless the run owns the display.");
+
             yield return New("rolib_typed_diameter_reaches_the_tank", ROLibTypedDiameterReachesTheTank,
                 "An RO tank given an exact diameter by TYPING it. The window's \"#\" "
                 + "button swaps its sliders for text boxes - stock offers that only on "
@@ -6960,6 +6968,192 @@ namespace DimensionSync.GameTests
         }
 
         /// <summary>
+        /// Type into each kind of ProceduralParts dimension in turn.
+        /// </summary>
+        /// <remarks>
+        /// The shapes differ in how many numbers describe them - a cylinder has one
+        /// diameter, a cone has two - and those are separate fields reached through
+        /// separate boxes. Typing into one says nothing about the other, so both are
+        /// walked here.
+        ///
+        /// Length is included even though this mod does not propagate it. A dimension
+        /// nobody catalogued is exactly where an unwanted side effect would go
+        /// unnoticed, and typing it is the cheapest way to say that setting it does
+        /// what it says and nothing else.
+        /// </remarks>
+        private static IEnumerator PPTypedDimensionsReachThePart(TestContext context)
+        {
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            Part tank = EditorBuilder.Spawn(PPTank);
+            if (tank == null) { context.Skip("no ProceduralParts tank installed"); yield break; }
+            yield return context.Frames(6);
+            EditorBuilder.SetRoot(tank);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            if (!PartActionWindow.Open(tank, out string why)) { context.Skip(why); yield break; }
+            yield return context.Frames(30);
+
+            var step = new TypedOutcome();
+            yield return SetTypedEntry(context, tank, on: true, step);
+            if (!step.Ok) { context.Skip(step.Why); PartActionWindow.CloseAll(); yield break; }
+
+            // --- a cylinder: one diameter, and a length -------------------------
+            yield return context.Say("Typing the cylinder's diameter, then its length.",
+                                     "Two boxes in the same window, one after the other.");
+
+            yield return TypeInto(context, tank, PPShapeModule, "diameter", "1.75", step);
+            if (!step.Ok) { context.Result.Fail(step.Why); PartActionWindow.CloseAll(); yield break; }
+            context.Check("typed diameter reached the cylinder",
+                          PartFields.Get(tank, PPShapeModule, "diameter"), 1.75f);
+
+            yield return TypeInto(context, tank, PPShapeModule, "length", "3.25", step);
+            if (!step.Ok) { context.Result.Fail(step.Why); PartActionWindow.CloseAll(); yield break; }
+            context.Check("typed length reached the cylinder",
+                          PartFields.Get(tank, PPShapeModule, "length"), 3.25f);
+            context.Check("and typing the length left the diameter alone",
+                          PartFields.Get(tank, PPShapeModule, "diameter"), 1.75f);
+
+            // --- the same part as a cone: two ends, two fields -------------------
+            yield return context.Say("Switching the part to a cone and typing both ends.",
+                                     "A cone is described by two diameters, which are two separate "
+                                     + "fields and two separate boxes.");
+
+            if (!PartFields.SetProceduralPartsShape(tank, "Cone"))
+            {
+                context.Result.Fail("could not switch the part to a cone");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+            yield return context.Settled();
+
+            // The window is rebuilt around the new shape's fields, so it has to be
+            // reopened before anything can be typed into it.
+            PartActionWindow.CloseAll();
+            yield return context.Frames(10);
+            if (!PartActionWindow.Open(tank, out why)) { context.Skip(why); yield break; }
+            yield return context.Frames(30);
+
+            const string cone = "ProceduralShapeCone";
+            yield return TypeInto(context, tank, cone, "topDiameter", "0.9", step);
+            if (!step.Ok) { context.Result.Fail(step.Why); PartActionWindow.CloseAll(); yield break; }
+            context.Check("typed top diameter reached the cone",
+                          PartFields.Get(tank, cone, "topDiameter"), 0.9f);
+
+            yield return TypeInto(context, tank, cone, "bottomDiameter", "2.4", step);
+            if (!step.Ok) { context.Result.Fail(step.Why); PartActionWindow.CloseAll(); yield break; }
+            context.Check("typed bottom diameter reached the cone",
+                          PartFields.Get(tank, cone, "bottomDiameter"), 2.4f);
+            context.Check("and the far end kept what it was given",
+                          PartFields.Get(tank, cone, "topDiameter"), 0.9f);
+
+            yield return SetTypedEntry(context, tank, on: false, step);
+            PartActionWindow.CloseAll();
+            yield return context.Frames(4);
+            context.CheckTrue("typed entry was switched back off afterwards",
+                              !GameSettings.PAW_NUMERIC_SLIDERS);
+        }
+
+        /// <summary>How a typed-entry step went.</summary>
+        private class TypedOutcome
+        {
+            /// <summary>True when the value was typed and read back.</summary>
+            public bool Ok;
+
+            /// <summary>Why it could not be, when it could not.</summary>
+            public string Why;
+        }
+
+        /// <summary>
+        /// Turn the window's "#" mode on by clicking it, as a player does.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="part">The part whose window is open.</param>
+        /// <param name="on">Which way to leave it.</param>
+        /// <param name="outcome">Whether the toggle ended up as asked.</param>
+        private static IEnumerator SetTypedEntry(TestContext context, Part part, bool on,
+                                                 TypedOutcome outcome)
+        {
+            outcome.Ok = false;
+            if (GameSettings.PAW_NUMERIC_SLIDERS == on) { outcome.Ok = true; yield break; }
+
+            RectTransform toggle = PartActionWindow.NumericToggle(part);
+            if (toggle == null) { outcome.Why = "the window has no numeric toggle"; yield break; }
+            if (!SyntheticInput.ScreenPointOfUI(toggle, out int tx, out int ty))
+            {
+                outcome.Why = "the numeric toggle is not on screen";
+                yield break;
+            }
+
+            var aim = new PointOutcome();
+            yield return PointAt(context, tx, ty, aim);
+            if (!aim.Ok) { outcome.Why = $"the pointer did not reach the toggle: {aim.Detail}"; yield break; }
+
+            SyntheticInput.Click();
+            for (int settle = 0; settle < 40 && GameSettings.PAW_NUMERIC_SLIDERS != on; settle++)
+                yield return context.Frames(5);
+
+            outcome.Ok = GameSettings.PAW_NUMERIC_SLIDERS == on;
+            if (!outcome.Ok) outcome.Why = "the numeric toggle did not change state";
+        }
+
+        /// <summary>
+        /// Type a value into one field's box in an open part action window.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="part">The part whose window is open.</param>
+        /// <param name="moduleName">The module the field belongs to.</param>
+        /// <param name="fieldName">The field to type into.</param>
+        /// <param name="value">What to type.</param>
+        /// <param name="outcome">Whether it was typed.</param>
+        /// <remarks>
+        /// Waits for the box rather than pausing a fixed time. The container is
+        /// switched on in response to an event, and a fixed pause has already produced
+        /// one run that reported "this install has no numeric input" when it plainly
+        /// did - a wrong reason stated confidently, which is worse than a failure.
+        /// </remarks>
+        private static IEnumerator TypeInto(TestContext context, Part part, string moduleName,
+                                            string fieldName, string value, TypedOutcome outcome)
+        {
+            outcome.Ok = false;
+
+            RectTransform box = null;
+            for (int settle = 0; settle < 60 && box == null; settle++)
+            {
+                box = PartActionWindow.TypedEntryFor(part, moduleName, fieldName);
+                if (box == null) yield return context.Frames(5);
+            }
+            if (box == null) { outcome.Why = $"no text box appeared for {fieldName}"; yield break; }
+
+            if (!SyntheticInput.ScreenPointOfUI(box, out int x, out int y))
+            {
+                outcome.Why = $"the text box for {fieldName} is not on screen";
+                yield break;
+            }
+
+            var aim = new PointOutcome();
+            yield return PointAt(context, x, y, aim);
+            if (!aim.Ok)
+            {
+                outcome.Why = $"the pointer did not reach {fieldName}'s box: {aim.Detail}";
+                yield break;
+            }
+
+            Harness.Log($"TYPED aiming {fieldName} at ({x}, {y}) over " +
+                        $"{PartActionWindow.WhatIsUnder(x, y)}");
+            SyntheticInput.Click();
+            yield return context.Frames(10);
+            SyntheticInput.Press("ctrl+a");
+            yield return context.Frames(4);
+            SyntheticInput.TypeText(value);
+            yield return context.Frames(10);
+            SyntheticInput.Press("Return");
+            yield return context.Settled();
+            outcome.Ok = true;
+        }
+
+        /// <summary>
         /// Type an exact diameter into an RO tank's window and watch it arrive.
         /// </summary>
         /// <remarks>
@@ -7097,6 +7291,27 @@ namespace DimensionSync.GameTests
             context.CheckTrue("ROLib's length write bypasses the field API here too "
                               + $"(hook saw: {sawLength ?? "nothing"})",
                               sawLength == null);
+
+            // --- and its other dimension, in the same window ----------------------
+            yield return context.Say("Now typing 2.6 into the length box.",
+                                     "ROLib's other dimension. It has a floor that rises with the "
+                                     + "diameter, so a length typed below that floor is refused by "
+                                     + "ROLib rather than by anything here - which is why this asks for "
+                                     + "a length comfortably above it.");
+
+            var lengthStep = new TypedOutcome();
+            yield return TypeInto(context, tank, ROModule, "currentLength", "2.6", lengthStep);
+            if (!lengthStep.Ok)
+            {
+                context.Result.Fail(lengthStep.Why);
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            context.Check("the typed length reached the tank",
+                          PartFields.Get(tank, ROModule, "currentLength"), 2.6f);
+            context.Check("and typing the length left the diameter alone",
+                          PartFields.Get(tank, ROModule, ROField), 3.7f);
 
             // Left on, the "#" state is written to settings.cfg and inherited by every
             // later scenario AND by the next run of the suite.

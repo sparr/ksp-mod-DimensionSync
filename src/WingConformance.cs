@@ -1455,7 +1455,31 @@ namespace DimensionSync
         private static float SpanBaselineOf(Part part, KspDimensionNode node)
         {
             float now = SpanOf(node);
-            if (part == null || !SlidFor.TryGetValue(part, out float remembered)) return now;
+            if (part == null) return now;
+
+            // B9 can be asked what this part held before it copied a length onto it,
+            // and everything below is an attempt to reconstruct that same number from
+            // what this mod happens to remember. Asking was tried as the ANSWER and
+            // reverted: measured over the scenarios that exercise it, the two agree
+            // every time, so it bought nothing - and it would have made the mod behave
+            // one way with Harmony installed and another without, a fork no test run
+            // here could ever exercise both sides of.
+            //
+            // Kept as a cross-check instead. It costs nothing, and the day the
+            // reconstruction stops being right, this says so in the log rather than
+            // leaving somebody to find it as drift on a wing months later.
+            if (DimensionSettings.Debug
+                && ForeignWrites.TryValueBefore(part, "sharedBaseLength", out float displaced)
+                && SlidFor.TryGetValue(part, out float against)
+                && Mathf.Abs(against - displaced) > 1e-4f)
+            {
+                UnityEngine.Debug.LogWarning(
+                    $"{DimensionSyncAddon.LogTag} BASELINE DISAGREES on #{part.GetInstanceID()}: " +
+                    $"B9 says it held {displaced:F4}, we reconstructed {against:F4}, " +
+                    $"field now {now:F4}. Trusting ours, as ever - but one of them is wrong.");
+            }
+
+            if (!SlidFor.TryGetValue(part, out float remembered)) return now;
             return float.IsNaN(remembered) ? now : remembered;
         }
 
