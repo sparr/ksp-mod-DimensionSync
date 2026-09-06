@@ -123,6 +123,25 @@ namespace DimensionSync
                    && Time.frameCount - write.Frame <= within;
         }
 
+        /// <summary>
+        /// The last foreign write to a field, as one string, or null if there was
+        /// none.
+        /// </summary>
+        /// <param name="part">The part to ask about.</param>
+        /// <param name="field">The field's name.</param>
+        /// <remarks>
+        /// For the game tests, which live in their own assembly and reach in by
+        /// reflection. A single string return keeps that call trivial where the
+        /// out-parameter forms would not be, and it lets a scenario assert what this
+        /// hook DID and DID NOT see - which is the only way to establish whether a
+        /// mod's writes go through the field API or around it.
+        /// </remarks>
+        public static string LastWriteDescription(Part part, string field)
+        {
+            if (!TryLastWrite(part, field, out Write write)) return null;
+            return $"{write.Source} {write.Before:F4}->{write.After:F4} at frame {write.Frame}";
+        }
+
         /// <summary>Forget a part that has gone away.</summary>
         /// <param name="part">The part to drop.</param>
         public static void Forget(Part part)

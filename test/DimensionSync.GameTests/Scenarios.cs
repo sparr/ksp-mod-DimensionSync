@@ -161,6 +161,15 @@ namespace DimensionSync.GameTests
                 + "API and then an onFieldChanged it invokes by hand, so this is the "
                 + "one place two mods are both mirroring the same edit.");
 
+            yield return New("rolib_mouse_click_links_length_to_diameter",
+                ROLibMouseClickLinksLengthToDiameter,
+                "An RO tank widened by pointing at it, right-clicking to open its part "
+                + "action window, and clicking the increment button - real input, all "
+                + "the way through. It settles two things nothing else does: that "
+                + "ROLib really does drive length from diameter, and whether it writes "
+                + "that length through the field API where our hook can see it, or "
+                + "around it the way B9 does. Skipped unless the run owns the display.");
+
             yield return New("rolib_idle_stack_is_left_alone", ROLibIdleStackIsLeftAlone,
                 "Two RO tanks of deliberately different sizes, left alone. ROLib "
                 + "rewrites length from diameter on its own account, which is a write "
@@ -6906,13 +6915,12 @@ namespace DimensionSync.GameTests
         /// a loop would show there first.
         ///
         /// Worth knowing what this does NOT establish. It was written expecting
-        /// ROLib's ValidateLength to write currentLength while the stack sat idle,
-        /// and the run says otherwise: not one currentLength write went through the
-        /// field API in the whole suite, though our own scenario text has long said
-        /// these tanks lengthen when they widen. So ROLib assigns that field directly
-        /// rather than through BaseField, the way B9 does - which would put it out of
-        /// reach of the general hook. Unconfirmed, and worth confirming before anyone
-        /// relies on length changes being visible.
+        /// ROLib's ValidateLength to write currentLength while the stack sat idle, and
+        /// no such write ever appears. That is not because the linkage is imaginary:
+        /// rolib_mouse_click_links_length_to_diameter clicks the real control and
+        /// watches the length go 1.0 to 1.5 as the diameter goes 2 to 3. ROLib assigns
+        /// that field directly rather than through BaseField, the way B9 does, so it
+        /// is invisible to the general hook. Measured there, not assumed here.
         /// </remarks>
         private static IEnumerator ROLibIdleStackIsLeftAlone(TestContext context)
         {
@@ -6940,6 +6948,193 @@ namespace DimensionSync.GameTests
                           PartFields.Get(stack.Parts[0], ROModule, "currentLength"), lowerLength);
             context.Check("upper tank length unchanged",
                           PartFields.Get(stack.Parts[1], ROModule, "currentLength"), upperLength);
+        }
+
+        /// <summary>
+        /// Widen an RO tank with the mouse, through its real window, and see what
+        /// ROLib does to its length and by what route.
+        /// </summary>
+        /// <remarks>
+        /// One part on its own, deliberately. With a neighbour there would be two
+        /// candidates for anything that moves - ROLib's own rules and this mod's
+        /// propagation - and the question here is precisely which of the two is
+        /// acting. A lone tank has nothing to propagate to, so anything that changes
+        /// besides the field that was clicked is ROLib's doing and nobody else's.
+        ///
+        /// Our own scenario text has claimed for a long time that these tanks lengthen
+        /// when they widen, and no length write has ever appeared through the field
+        /// hook - so either the claim is wrong or ROLib assigns that field directly,
+        /// the way B9 does, and length changes are outside the general hook's reach.
+        /// This distinguishes the two by making the change for real and then asking
+        /// the hook what it saw.
+        /// </remarks>
+        private static IEnumerator ROLibMouseClickLinksLengthToDiameter(TestContext context)
+        {
+            string tankName = ROTankPart();
+            if (tankName == null) { context.Skip("no ROTanks part installed"); yield break; }
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            Part tank = EditorBuilder.Spawn(tankName);
+            if (tank == null) { context.Skip("could not spawn an RO tank"); yield break; }
+            yield return context.Frames(6);
+            PartFields.Set(tank, ROModule, ROField, 2f, WriteMode.PartActionWindow);
+            EditorBuilder.SetRoot(tank);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float diameterBefore = PartFields.Get(tank, ROModule, ROField);
+            float lengthBefore = PartFields.Get(tank, ROModule, "currentLength");
+            Harness.Log($"ROPAW before: diameter {diameterBefore:F4} length {lengthBefore:F4}");
+
+            // --- open the window by right-clicking the part, as a player does -----
+            yield return context.Say("Right-clicking the RO tank to open its window.",
+                                     "Real pointer, real button, real window.");
+
+            // The camera is still moving after PresentShip, and a point taken while it
+            // moves is stale before the pointer gets there. Wait for the projection to
+            // stop changing rather than for a fixed number of frames.
+            Vector3 probe = EditorBuilder.BodyCentreOf(tank);
+            var lastSeen = new Vector2(float.NaN, float.NaN);
+            for (int settle = 0; settle < 300; settle++)
+            {
+                if (SyntheticInput.ScreenPoint(probe, out int sx, out int sy))
+                {
+                    var now = new Vector2(sx, sy);
+                    if ((now - lastSeen).sqrMagnitude <= 1f) break;
+                    lastSeen = now;
+                }
+                yield return context.Frames(5);
+            }
+
+            if (!SyntheticInput.ScreenPoint(probe, out int px, out int py))
+            {
+                context.Skip("the tank is not on screen to click");
+                yield break;
+            }
+
+            var aim = new PointOutcome();
+            yield return PointAt(context, px, py, aim);
+            if (!aim.Ok)
+            {
+                context.Skip($"the pointer did not land where it was aimed: {aim.Detail}");
+                yield break;
+            }
+
+            SyntheticInput.RightClick();
+            yield return context.Frames(30);
+
+            UIPartActionFloatEdit edit = PartActionWindow.FloatEditFor(tank, ROModule, ROField);
+            if (edit == null)
+            {
+                // The right-click may simply not have registered. Falling back to
+                // spawning the window keeps the scenario about ROLib's linkage rather
+                // than about pointer reliability, and says in the log which happened.
+                Harness.Log("ROPAW right-click did not open a usable window; spawning it directly");
+                if (!PartActionWindow.Open(tank, out string why)) { context.Skip(why); yield break; }
+                yield return context.Frames(30);
+                edit = PartActionWindow.FloatEditFor(tank, ROModule, ROField);
+            }
+            if (edit == null)
+            {
+                context.Result.Fail("no diameter control appeared in the RO tank's window");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            // --- click the increment button itself --------------------------------
+            if (!SyntheticInput.ScreenPointOfUI(edit.incLarge.transform as RectTransform,
+                                                out int bx, out int by))
+            {
+                context.Result.Fail("the diameter control's increment button is not on screen");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            yield return context.Say("Clicking the diameter's increment button.",
+                                     "Watch the tank get LONGER as well as wider. Nothing is stacked on "
+                                     + "it and nothing propagates anywhere, so whatever happens to its "
+                                     + "length is ROLib's own rule.");
+
+            Harness.Log($"ROPAW control: {PartActionWindow.Describe(edit)}");
+            Harness.Log($"ROPAW buttons: {PartActionWindow.DescribeButtons(edit)}");
+            Harness.Log($"ROPAW aiming at ({bx}, {by}) of {Screen.width}x{Screen.height}; " +
+                        $"under it: {PartActionWindow.WhatIsUnder(bx, by)}");
+
+            var onButton = new PointOutcome();
+            yield return PointAt(context, bx, by, onButton);
+            if (!onButton.Ok)
+            {
+                context.Skip($"the pointer did not reach the button: {onButton.Detail}");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            SyntheticInput.Click();
+            yield return context.Settled();
+
+            float diameterAfter = PartFields.Get(tank, ROModule, ROField);
+            float lengthAfter = PartFields.Get(tank, ROModule, "currentLength");
+            Harness.Log($"ROPAW after: diameter {diameterAfter:F4} length {lengthAfter:F4}");
+
+            string sawDiameter = ForeignWriteSeen(tank, ROField);
+            string sawLength = ForeignWriteSeen(tank, "currentLength");
+            Harness.Log($"ROPAW hook saw: {ROField} = {sawDiameter ?? "nothing"}; " +
+                        $"currentLength = {sawLength ?? "nothing"}");
+
+            context.CheckTrue("the click widened the tank", diameterAfter > diameterBefore + 0.01f);
+
+            // The linkage itself. If this fails, the claim repeated in several
+            // scenario descriptions is simply wrong and they need correcting.
+            context.CheckTrue($"ROLib changed the length with the diameter "
+                              + $"({lengthBefore:F4} -> {lengthAfter:F4})",
+                              Mathf.Abs(lengthAfter - lengthBefore) > 0.01f);
+
+            // The mechanism, now measured rather than guessed at.
+            //
+            // The diameter went through KSP's own window code, so the hook must have
+            // seen it; if it had not, the hook would be broken rather than ROLib being
+            // unusual, and every other conclusion drawn from it would be suspect.
+            context.CheckTrue("the hook saw the window's write to the diameter",
+                              sawDiameter != null);
+
+            // The length is the interesting half. It demonstrably changed, and the
+            // hook on KSP's field API did NOT see it - so ROLib assigns that field
+            // directly, the way B9 does, and length changes are outside the reach of
+            // the general hook. That is asserted rather than merely logged because it
+            // is a real gap in coverage: should this ever start failing, either ROLib
+            // has started using the field API or somebody has widened the hook, and
+            // both are things anyone relying on it needs to be told about.
+            context.CheckTrue("ROLib's length write bypasses the field API, as B9's do "
+                              + $"(hook saw: {sawLength ?? "nothing"})",
+                              sawLength == null);
+
+            PartActionWindow.CloseAll();
+            yield return context.Frames(4);
+        }
+
+        /// <summary>
+        /// What DimensionSync's foreign-write hook last recorded for a field, or null.
+        /// </summary>
+        /// <param name="part">The part to ask about.</param>
+        /// <param name="field">The field's name.</param>
+        /// <remarks>
+        /// By reflection because the tests are a separate plugin and do not link
+        /// against the mod. A missing type or method reads as "saw nothing", which is
+        /// right: on a build without the hook there is nothing to have seen.
+        /// </remarks>
+        private static string ForeignWriteSeen(Part part, string field)
+        {
+            System.Type type = null;
+            foreach (AssemblyLoader.LoadedAssembly loaded in AssemblyLoader.loadedAssemblies)
+            {
+                type = loaded.assembly?.GetType("DimensionSync.ForeignWrites", false);
+                if (type != null) break;
+            }
+
+            System.Reflection.MethodInfo method = type?.GetMethod(
+                "LastWriteDescription",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            return method?.Invoke(null, new object[] { part, field }) as string;
         }
 
         /// <summary>

@@ -232,6 +232,50 @@ namespace DimensionSync.GameTests
         /// <summary>Click at the pointer's current position.</summary>
         public static void Click() => Run("click --clearmodifiers 1");
 
+        /// <summary>Click the right button, which is what opens a part action window.</summary>
+        public static void RightClick() => Run("click --clearmodifiers 3");
+
+        /// <summary>
+        /// Where a piece of user interface sits on screen, in the same top-left
+        /// coordinates the pointer is driven in.
+        /// </summary>
+        /// <param name="rect">The element to locate.</param>
+        /// <param name="x">Its horizontal position.</param>
+        /// <param name="y">Its vertical position.</param>
+        /// <remarks>
+        /// Not <see cref="ScreenPoint"/>: that projects a point in the WORLD through
+        /// the editor camera, and a button lives in a canvas instead. An overlay
+        /// canvas is already in screen coordinates and must be converted with no
+        /// camera at all, while one rendered through a camera needs that camera -
+        /// passing the wrong one puts the pointer somewhere plausible and wrong,
+        /// which is the failure this whole suite has learnt to distrust.
+        /// </remarks>
+        public static bool ScreenPointOfUI(RectTransform rect, out int x, out int y)
+        {
+            x = y = 0;
+            if (rect == null) return false;
+
+            Canvas canvas = rect.GetComponentInParent<Canvas>();
+            if (canvas == null) return false;
+
+            Camera camera = canvas.renderMode == RenderMode.ScreenSpaceOverlay
+                ? null
+                : canvas.worldCamera;
+            // From the corners rather than from rect.position: a pivot that is not in
+            // the middle puts "the position" on an edge, and for a small button that
+            // is the difference between hitting it and hitting what is behind it.
+            var corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            Vector2 point = Vector2.zero;
+            for (int i = 0; i < 4; i++)
+                point += RectTransformUtility.WorldToScreenPoint(camera, corners[i]);
+            point /= 4f;
+
+            x = Mathf.RoundToInt(point.x);
+            y = Mathf.RoundToInt(Screen.height - point.y);
+            return x >= 0 && y >= 0 && x < Screen.width && y < Screen.height;
+        }
+
         /// <summary>Press and release a key.</summary>
         public static void Press(string key) => Run($"key --clearmodifiers {key}");
 

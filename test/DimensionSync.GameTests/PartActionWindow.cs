@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace DimensionSync.GameTests
 {
@@ -94,6 +96,77 @@ namespace DimensionSync.GameTests
             // The name matched but the module did not, which is still likelier to be
             // the field wanted than nothing at all - said plainly rather than hidden.
             return anyName;
+        }
+
+        /// <summary>
+        /// What Unity's own event system finds under a screen position, top first.
+        /// </summary>
+        /// <param name="x">Horizontal position, measured from the left.</param>
+        /// <param name="y">Vertical position, measured from the TOP, as the pointer is driven.</param>
+        /// <remarks>
+        /// A click that lands where it was aimed and does nothing has two very
+        /// different explanations - the aim was wrong, or the thing there does not
+        /// take clicks - and no amount of staring at coordinates separates them. This
+        /// asks the same machinery a real click goes through.
+        /// </remarks>
+        public static string WhatIsUnder(int x, int y)
+        {
+            if (EventSystem.current == null) return "there is no event system";
+
+            var where = new PointerEventData(EventSystem.current)
+            {
+                position = new Vector2(x, Screen.height - y),
+            };
+            var hits = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(where, hits);
+            if (hits.Count == 0) return "nothing";
+
+            var names = new List<string>();
+            for (int i = 0; i < hits.Count && i < 3; i++) names.Add(hits[i].gameObject.name);
+            return string.Join(" / ", names.ToArray());
+        }
+
+        /// <summary>Where each of a float-edit's buttons is, and what is over it.</summary>
+        /// <param name="edit">The widget to survey.</param>
+        /// <remarks>
+        /// Kept even though the click now lands, because without it "the click did
+        /// nothing" is unreadable. It was this that showed the pointer sitting on the
+        /// scroll viewport instead of the button, which was a pivot problem in the
+        /// projection and looked from the outside exactly like a mod ignoring input.
+        /// </remarks>
+        public static string DescribeButtons(UIPartActionFloatEdit edit)
+        {
+            if (edit == null) return "no control";
+            var said = new List<string>();
+            AddButton(said, "incLarge", edit.incLarge);
+            AddButton(said, "incSmall", edit.incSmall);
+            AddButton(said, "decLarge", edit.decLarge);
+            AddButton(said, "slider", edit.slider);
+            return string.Join("; ", said.ToArray());
+        }
+
+        /// <summary>One entry of <see cref="DescribeButtons"/>.</summary>
+        private static void AddButton(List<string> into, string name, MonoBehaviour button)
+        {
+            if (button == null) return;
+            if (SyntheticInput.ScreenPointOfUI(button.transform as RectTransform, out int x, out int y))
+                into.Add($"{name} ({x},{y}) over {WhatIsUnder(x, y)}");
+            else
+                into.Add($"{name} off screen");
+        }
+
+        /// <summary>How a float-edit control is set up, for a log line.</summary>
+        /// <param name="edit">The widget to describe.</param>
+        public static string Describe(UIPartActionFloatEdit edit)
+        {
+            if (edit == null) return "no control";
+            var control = edit.Field?.uiControlEditor as UI_FloatEdit;
+            string increments = control == null
+                ? "no UI_FloatEdit"
+                : $"incLarge {control.incrementLarge:F4} incSmall {control.incrementSmall:F4} " +
+                  $"slide {control.incrementSlide:F4} range {control.minValue:F3}..{control.maxValue:F3}";
+            return $"{increments}; incLarge button active " +
+                   $"{edit.incLarge != null && edit.incLarge.gameObject.activeInHierarchy}";
         }
 
         /// <summary>
