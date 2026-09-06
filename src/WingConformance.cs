@@ -78,6 +78,24 @@ namespace DimensionSync
             public bool HoldFarEnd;
         }
 
+        /// <summary>Parts <see cref="Reanchor"/> has already put back this frame.</summary>
+        /// <remarks>
+        /// The anchor and the hinge slide are two answers to one question - where a
+        /// control surface belongs now its wing has changed shape under it - and a
+        /// part that has just been placed by its station does not also need moving by
+        /// how much it grew. On the side the player edits they never collide, because
+        /// the anchor absorbs the length change and the slide then finds nothing left
+        /// to do. On the other side, dealt with a frame later, the slide's baseline is
+        /// still the old length, so it fires on top of an anchor that has already put
+        /// the part exactly where it belongs.
+        ///
+        /// This is only safe alongside <see cref="SpanBaselineOf"/>. Without it the
+        /// anchor is itself wrong on the late side, and suppressing the slide there
+        /// just leaves the anchor's error uncorrected - which is worse, and measurably
+        /// so: it overshot by 0.1875 m where the slide had left it 0.0625 m short.
+        /// </remarks>
+        private static readonly Dictionary<Part, float> Repositioned = new Dictionary<Part, float>();
+
         /// <summary>Snapshots taken by <see cref="Snapshot"/>, consumed by <see cref="Reanchor"/>.</summary>
         private static readonly Dictionary<Part, SpanSnapshot> Snapshots =
             new Dictionary<Part, SpanSnapshot>();
@@ -133,7 +151,8 @@ namespace DimensionSync
                 // response to its wing growing does not count and still anchors.
                 if (pendingSpans != null && pendingSpans.ContainsKey(part)) continue;
 
-                float span = SpanOf(node);
+                bool hostSpanInFlight = pendingSpans != null && pendingSpans.ContainsKey(host.Part);
+                float span = hostSpanInFlight ? SpanBaselineOf(part, node) : SpanOf(node);
 
                 // The host's span as it was before the edit that set this
                 // propagation off. The edit has already landed in the field by the
@@ -188,6 +207,7 @@ namespace DimensionSync
         /// </remarks>
         public static void Reanchor(Dictionary<Part, KspDimensionNode> nodes)
         {
+            Repositioned.Clear();
             if (Snapshots.Count == 0) return;
 
             foreach (KeyValuePair<Part, SpanSnapshot> entry in Snapshots)
@@ -253,7 +273,12 @@ namespace DimensionSync
                                           $"station {before.Station:F3}, moving {correction}");
                 if (correction.sqrMagnitude <= 1e-8f) continue;
 
+                Vector3 reanchorWas = part.transform.position;
                 part.transform.position += correction;
+                Repositioned[part] = span - before.Span;
+                MoveLedger.Note("reanchor", part, host.Part, reanchorWas,
+                                $"station {before.Station:F4} span {before.Span:F3}->{span:F3} " +
+                                $"hostSpan {before.HostSpan:F3}->{hostSpan:F3} holdFar {before.HoldFarEnd}");
 
                 // attPos0 is what the editor restores the part to when it re-lays the
                 // ship out, so a move that does not update it is undone on the next
@@ -329,9 +354,12 @@ namespace DimensionSync
                     UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} wing joint: {node.Label} " +
                                           $"{part.transform.localPosition} -> {wanted}");
 
+                Vector3 jointWas = part.transform.position;
                 part.transform.localPosition = wanted;
                 part.attPos0 = wanted;
                 EditorGizmo.PartMoved(part);
+                MoveLedger.Note("joint", part, host.Part, jointWas,
+                                $"parent span {parentSpan:F4} tip offset {parentOffsetTip:F4}");
             }
         }
 
@@ -1007,9 +1035,13 @@ namespace DimensionSync
                                                 EdgeAtBefore(wing, trailing, 1f), from);
             if (Mathf.Abs(shift) > 1e-4f)
             {
+                Vector3 edgeWas = part.transform.position;
                 part.transform.position += host.Part.transform.TransformDirection(ChordAxis) * shift;
                 part.attPos0 = part.transform.localPosition;
                 EditorGizmo.PartMoved(part);
+                MoveLedger.Note("edge", part, host.Part, edgeWas,
+                                $"{(trailing ? "trailing" : "leading")} edge shift {shift:F4} " +
+                                $"from {from:F4} edgeHere {edgeHere:F4}");
 
                 if (DimensionSettings.Debug)
                     UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} edge moved: {node.Label} " +
@@ -1049,10 +1081,14 @@ namespace DimensionSync
                 Vector3 axis = host.Part.transform.TransformDirection(ThicknessAxis);
                 Quaternion rotation = Quaternion.AngleAxis(turn, axis);
 
+                Vector3 sweepWas = part.transform.position;
                 part.transform.rotation = rotation * part.transform.rotation;
                 part.transform.position = pivot + rotation * (part.transform.position - pivot);
                 part.attPos0 = part.transform.localPosition;
                 EditorGizmo.PartMoved(part);
+                MoveLedger.Note("sweep", part, host.Part, sweepWas,
+                                $"{(trailing ? "trailing" : "leading")} edge turn {turn:F4} deg " +
+                                $"slope {slope:F4} about station {from:F4}");
                 part.attRotation0 = part.transform.localRotation;
 
                 if (DimensionSettings.Debug)
@@ -1237,13 +1273,32 @@ namespace DimensionSync
             float grew = ownLengthEdited ? 0f : hinge - lengthBefore;
             if (float.IsNaN(grew) || Mathf.Abs(grew) <= 1e-4f) return;
 
+            // Skip only the growth the anchor demonstrably absorbed. Being moved by
+            // the anchor is not on its own a reason to skip: the anchor usually moves
+            // a surface because its HOST changed shape, which says nothing about the
+            // surface's own length and leaves the slide with real work to do. What
+            // must not happen twice is one length change being paid for by both.
+            if (Repositioned.TryGetValue(part, out float absorbed)
+                && Mathf.Abs(absorbed - grew) <= 1e-3f)
+            {
+                if (DimensionSettings.Debug)
+                    UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} hinge: #{part.GetInstanceID()} " +
+                                          $"{lengthBefore:F3} -> {hinge:F3}, NOT sliding {grew / 2f:F3} m - " +
+                                          $"its station already absorbed the same {absorbed:F4} m of growth");
+                return;
+            }
+
             host.SpanEnds(span, out Vector3 hostRoot, out _);
             Vector3 outboard = part.transform.TransformDirection(node.SpanAxis());
             if (Vector3.Dot(outboard, part.transform.position - hostRoot) < 0f) outboard = -outboard;
 
+            Vector3 hingeWas = part.transform.position;
             part.transform.position += outboard * (grew / 2f);
             if (part.attachMode == AttachModes.SRF_ATTACH) part.attPos0 = part.transform.localPosition;
             EditorGizmo.PartMoved(part);
+            MoveLedger.Note("hinge", part, host.Part, hingeWas,
+                            $"length {lengthBefore:F3}->{hinge:F3} grew {grew:F4} " +
+                            $"slide {grew / 2f:F4} ownLengthEdited {ownLengthEdited}");
 
             if (DimensionSettings.Debug)
                 UnityEngine.Debug.Log($"{DimensionSyncAddon.LogTag} hinge: #{part.GetInstanceID()} {lengthBefore:F3} -> " +
@@ -1370,6 +1425,39 @@ namespace DimensionSync
         /// frames so a symmetry pair dealt with a frame apart can still be compared.
         /// </summary>
         private static readonly Dictionary<Part, float> SlidFor = new Dictionary<Part, float>();
+
+        /// <summary>
+        /// The span to measure a part's place on its host by: the length it had before
+        /// this propagation began, not necessarily the length its field holds now.
+        /// </summary>
+        /// <param name="part">The part being measured.</param>
+        /// <param name="node">Its node, for reading the field when nothing is remembered.</param>
+        /// <remarks>
+        /// The anchor and the hinge slide both need to know what this surface measured
+        /// before any of this started, and until this existed they answered it
+        /// differently - the hinge from <see cref="SlidFor"/>, which is kept across
+        /// frames, and the anchor by reading the field, which is not.
+        ///
+        /// On the side the player edits those two agree, because the field still holds
+        /// the old length when the snapshot is taken. On the other side they do not.
+        /// The editor copies the new length across without the write passing through
+        /// anything that says so, and it lands before that side's turn comes - so its
+        /// anchor sees a flap that never changed length, measures its station off
+        /// already-shrunk geometry, and puts it in the wrong place, while its hinge
+        /// sees the full change and slides it somewhere else again. Neither side ever
+        /// ran both rules: one absorbed the change in the anchor and had nothing left
+        /// to slide, the other was blind to it in the anchor and slid the lot. Two
+        /// answers to one question, and the pair ends up centimetres apart.
+        ///
+        /// One memory, asked by both, is what makes the two sides behave alike -
+        /// rather than leaving them to disagree and correcting the difference.
+        /// </remarks>
+        private static float SpanBaselineOf(Part part, KspDimensionNode node)
+        {
+            float now = SpanOf(node);
+            if (part == null || !SlidFor.TryGetValue(part, out float remembered)) return now;
+            return float.IsNaN(remembered) ? now : remembered;
+        }
 
         /// <summary>Each control surface's shear at the moment it was first seen.</summary>
         private static readonly Dictionary<Part, float> ShearBaseShear = new Dictionary<Part, float>();

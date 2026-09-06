@@ -4,6 +4,7 @@
 #   ./run_game_tests.sh                 # Xvfb, software GL
 #   DS_DISPLAY=:0 ./run_game_tests.sh   # your own X display, hardware GL (much faster)
 #   DS_KEEP_OPEN=1 ./run_game_tests.sh  # leave KSP running afterwards
+#   DS_ONLY=demo_parent ./run_game_tests.sh   # only scenarios matching a substring
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,6 +46,8 @@ extra=()
 [[ "${1:-}" == "--sph" ]] && extra+=(-dstest-sph)
 
 args=(-dstest -dstest-out "$results")
+# DS_ONLY=substring narrows the run to matching scenarios, for iterating on one.
+[[ -n "${DS_ONLY:-}" ]] && args+=(-dstest-only "$DS_ONLY")
 [[ -n "${DS_KEEP_OPEN:-}" ]] && args+=(-dstest-keep-open)
 
 # Mute the install before every automated launch. SDL_AUDIODRIVER has no effect

@@ -68,6 +68,7 @@ namespace DimensionSync.GameTests
             // Panel first, log second. Harness.Log flushes KSP.log to disk on every
             // line, and doing that before putting the text on screen leaves the panel
             // showing the previous step for as long as the write takes.
+            LastSaid = heading;
             UI?.Prompt(heading, detail);
             Harness.Log(detail == null ? heading : heading + " | " + detail);
 
@@ -149,6 +150,26 @@ namespace DimensionSync.GameTests
         /// longer. The cap is there so a mod that never settles cannot hang the run.
         /// </remarks>
         public IEnumerator Settled()
+        {
+            yield return SettleQuietly();
+            Invariants.Check(this, LastSaid ?? "a change");
+        }
+
+        /// <summary>The heading of the last step announced, for naming a failure.</summary>
+        public string LastSaid;
+
+        /// <summary>
+        /// Start watching every number on the ship, so a later
+        /// <see cref="FieldWatch.NothingElseChanged"/> can report anything that moved
+        /// which the step did not claim.
+        /// </summary>
+        public FieldWatch WatchEverything()
+        {
+            return new FieldWatch(this);
+        }
+
+        /// <summary>Wait until the ship stops changing. See <see cref="Settled"/>.</summary>
+        private IEnumerator SettleQuietly()
         {
             // The quiet window has to be longer than the longest deferral any mod
             // under test uses, or this returns while work is still pending. B9
