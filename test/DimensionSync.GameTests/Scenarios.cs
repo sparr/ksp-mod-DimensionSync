@@ -174,6 +174,14 @@ namespace DimensionSync.GameTests
                 + "The RO tank will also grow longer, which is ROLib's own rule rather "
                 + "than anything DimensionSync did.");
 
+            yield return New("pp_paw_buttons_drive_a_mirrored_stack", PawButtonsDriveAMirroredStack,
+                "The only scenario that edits a part through KSP's REAL part action "
+                + "window instead of our reimplementation of it. It opens the window, "
+                + "finds the widget, and taps the increment button its listener is "
+                + "bound to, so KSP's own field-setting path runs - including the "
+                + "write out to symmetry counterparts, which every other scenario "
+                + "performs itself and therefore cannot be said to have tested.");
+
             yield return New("pp_booster_stack_syncs_within_itself", BoosterStackSyncsWithinItself,
                 "A two-tank booster strapped to the side of a core. Resizing the lower "
                 + "booster tank should carry up its own stack and stop there - the "
@@ -1352,6 +1360,95 @@ namespace DimensionSync.GameTests
                           PartFields.ProceduralPartsBuiltDiameter(rig.Mirror[1]), 2f);
             context.Check("core untouched",
                           PartFields.Get(rig.Core[0], PPShapeModule, "diameter"), 2.5f);
+        }
+
+        /// <summary>
+        /// The mirrored booster rig again, driven through the real part action
+        /// window rather than through our imitation of it.
+        /// </summary>
+        /// <remarks>
+        /// Everything else in this suite reaches a field with
+        /// WriteMode.PartActionWindow, which sets the field, fires onFieldChanged and
+        /// copies the value to the symmetry counterparts - because that is what we
+        /// believe the window does. A scenario built on that can confirm the belief
+        /// is self-consistent and nothing more. In particular the harness doing its
+        /// own symmetry pass means KSP's SetSymCounterpartValue has never run in this
+        /// suite, and neither has whatever another mod does in response to it.
+        ///
+        /// So this one taps the real widget and lets KSP do the rest.
+        /// </remarks>
+        private static IEnumerator PawButtonsDriveAMirroredStack(TestContext context)
+        {
+            var rig = new BoosterRig();
+            yield return BuildBoosterRig(context, rig, mirrored: true);
+            if (!rig.Ok) yield break;
+
+            float before = PartFields.Get(rig.Booster[0], PPShapeModule, "diameter");
+            EditorBuilder.WillEdit(rig.Booster[0], growth: 2f);
+
+            yield return context.Say("Opening the real part action window on one lower booster.",
+                                     "Not our stand-in for it: the window a right-click opens.");
+
+            if (!PartActionWindow.Open(rig.Booster[0], out string why))
+            {
+                // No UI at all means this run cannot do it; anything else is a
+                // failure, because a scenario that quietly skips reads exactly like
+                // one that passed.
+                context.Skip(why);
+                yield break;
+            }
+            yield return context.Frames(30);
+
+            UIPartActionFloatEdit edit =
+                PartActionWindow.FloatEditFor(rig.Booster[0], PPShapeModule, "diameter");
+            if (edit == null)
+            {
+                context.Result.Fail("the window opened but showed no diameter control to tap");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            yield return context.Say("Tapping the diameter's large increment button twice.",
+                                     "Both taps run KSP's own handler, so the value it settles on is the "
+                                     + "one the control's own increment and limits produce - not a number "
+                                     + "this test chose.\n\n"
+                                     + "The booster above should follow by propagation. The far side should "
+                                     + "follow because KSP writes a window edit out to symmetry "
+                                     + "counterparts, which nothing in this suite has exercised before.");
+
+            PartActionWindow.Tap(edit, up: true, large: true);
+            yield return context.Frames(4);
+            PartActionWindow.Tap(edit, up: true, large: true);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float after = PartFields.Get(rig.Booster[0], PPShapeModule, "diameter");
+            Harness.Log($"PAW diameter {before:F4} -> {after:F4} after two large taps");
+
+            // Nothing here asserts a chosen number. What the taps produce is KSP's
+            // business; what matters is that they produced something and that the
+            // rest of the craft agrees with it.
+            context.CheckTrue("the taps actually changed the tapped booster",
+                              Mathf.Abs(after - before) > 0.01f);
+            context.Check("upper booster on the tapped side follows",
+                          PartFields.Get(rig.Booster[1], PPShapeModule, "diameter"), after);
+            context.Check("lower booster on the mirrored side follows",
+                          PartFields.Get(rig.Mirror[0], PPShapeModule, "diameter"), after);
+            context.Check("upper booster on the mirrored side follows",
+                          PartFields.Get(rig.Mirror[1], PPShapeModule, "diameter"), after);
+
+            // Fields can hold the right number on a part still drawn the old size.
+            context.Check("tapped booster's mesh rebuilt",
+                          PartFields.ProceduralPartsBuiltDiameter(rig.Booster[0]), after);
+            context.Check("mirrored upper booster's mesh rebuilt",
+                          PartFields.ProceduralPartsBuiltDiameter(rig.Mirror[1]), after);
+            context.Check("core untouched",
+                          PartFields.Get(rig.Core[0], PPShapeModule, "diameter"), 2.5f);
+
+            // Left open, this window and its selection are inherited by whatever runs
+            // next - which is how a gizmo scenario once poisoned the rest of a run.
+            PartActionWindow.CloseAll();
+            yield return context.Frames(4);
         }
 
         /// <summary>
