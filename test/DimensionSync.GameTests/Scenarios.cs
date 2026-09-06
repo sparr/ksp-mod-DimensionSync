@@ -345,6 +345,14 @@ namespace DimensionSync.GameTests
                 + "the only one that can tell whether a drag behaves like a typed "
                 + "number. Skipped unless the run owns the display.");
 
+            yield return New("pwings_typed_j_window_dimensions", PWingsTypedJWindowDimensions,
+                "B9's dimensions typed into B9's own window. They are the one family "
+                + "this suite cannot reach through a part action window - every one is "
+                + "guiActiveEditor = false - so the only way in is the window B9 draws "
+                + "itself, and being IMGUI it has nothing to find. The boxes are "
+                + "located by watching B9 draw them. Skipped unless the run owns the "
+                + "display.");
+
             yield return New("pwings_span_runs_along_local_x", SpanRunsAlongLocalX,
                 "A measurement of B9, not of this mod: which of a wing's own axes its "
                 + "SPAN runs along. The conformance rules assume local x, and an "
@@ -4775,11 +4783,30 @@ namespace DimensionSync.GameTests
 
             for (int attempt = 1; attempt <= 4; attempt++)
             {
+                float t0 = Time.realtimeSinceStartup;
                 SyntheticInput.FocusOwnWindow();
+                float t1 = Time.realtimeSinceStartup;
                 SyntheticInput.MoveTo(x, y);
+                float t2 = Time.realtimeSinceStartup;
                 yield return context.Frames(6);
+                float t3 = Time.realtimeSinceStartup;
 
-                if (SyntheticInput.PointerAgrees(x, y, out string where))
+                bool agreed = SyntheticInput.PointerAgrees(x, y, out string where);
+
+                // Silent unless something stalls. Aiming is three subprocess calls
+                // and six frames and should cost under a second; it once cost
+                // seventeen, because xdotool's --sync sat waiting out a 15.4 s
+                // timeout on every other move. Nothing in the results said so - the
+                // scenario passed, it was merely slow - and it took four wrong
+                // guesses before anyone timed the parts separately. Leaving the
+                // stopwatch in costs a comparison per aim and means the next stall
+                // announces itself.
+                float spent = Time.realtimeSinceStartup - t0;
+                if (spent > 2f)
+                    Harness.Log($"SLOW aim took {spent:F2}s: focus {t1 - t0:F2}s, " +
+                                $"move {t2 - t1:F2}s, frames {t3 - t2:F2}s, " +
+                                $"check {Time.realtimeSinceStartup - t3:F2}s");
+                if (agreed)
                 {
                     outcome.Ok = true;
                     outcome.Detail = where;
@@ -6802,6 +6829,239 @@ namespace DimensionSync.GameTests
                           PartFields.Get(stack.Parts[1], "ModuleROTank", "currentDiameter"), 3f);
         }
 
+        /// <summary>
+        /// Type a value into one of B9's boxes, checking it took and retrying if not.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="wing">The wing being edited.</param>
+        /// <param name="field">The B9 field the box writes to.</param>
+        /// <param name="value">The value to type.</param>
+        /// <param name="x">The box's horizontal position.</param>
+        /// <param name="y">The box's vertical position.</param>
+        /// <param name="outcome">Whether the field ended up holding the value.</param>
+        /// <remarks>
+        /// The retry is not defensive padding, it is the point. B9 hands its text box
+        /// a freshly formatted string on every frame, and Unity writes that straight
+        /// over whatever is being edited, so a keystroke arriving after a redraw is
+        /// inserted into a regenerated "x.xxx" instead of after the digits already
+        /// typed. The usual result is a value a thousandth or so off what was asked
+        /// for, and a field being driven to zero can be impossible to clear at all
+        /// because each deletion is undone by the next redraw.
+        ///
+        /// This scenario passed twice by luck before that was understood. Typing the
+        /// value inside a single frame makes it rare; checking and retyping makes it
+        /// not matter; logging the retries means the day it gets worse, the log says
+        /// so rather than the suite simply going red somewhere else.
+        /// </remarks>
+        private static IEnumerator TypeIntoB9Box(TestContext context, Part wing, string field,
+                                                 float value, int x, int y, TypedOutcome outcome)
+        {
+            outcome.Ok = false;
+
+            for (int attempt = 1; attempt <= 4 && !outcome.Ok; attempt++)
+            {
+                float began = Time.realtimeSinceStartup;
+                var aim = new PointOutcome();
+                yield return PointAt(context, x, y, aim);
+                float aimed = Time.realtimeSinceStartup;
+                if (!aim.Ok)
+                {
+                    outcome.Why = $"the pointer did not reach {field}'s box: {aim.Detail}";
+                    yield break;
+                }
+
+                SyntheticInput.Click();
+                yield return context.Frames(3);
+                SyntheticInput.Press("ctrl+a");
+                yield return context.Frames(2);
+                SyntheticInput.TypeText(value.ToString("0.###"));
+                yield return context.Frames(3);
+                SyntheticInput.Press("Return");
+
+                // Wait for the field, not for the ship. B9 parses and applies the
+                // value inside its own OnGUI, so a full settle after every box waits
+                // out a rebuild that has nothing to do with whether the typing
+                // worked - and at a 2.5 s cap across ten boxes that was most of the
+                // three minutes this scenario used to cost. Polling stops the moment
+                // the number arrives, and the retry below still catches the case
+                // where it never does.
+                float typed = Time.realtimeSinceStartup;
+                float got = float.NaN;
+                int polls = 0;
+                for (; polls < 20; polls++)
+                {
+                    got = PartFields.Get(wing, PWingModule, field);
+                    if (Mathf.Abs(got - value) <= 0.02f) break;
+                    yield return context.Frames(2);
+                }
+                outcome.Ok = Mathf.Abs(got - value) <= 0.02f;
+                float cost = Time.realtimeSinceStartup - began;
+                if (cost > 5f)
+                    Harness.Log($"SLOW typing {field} took {cost:F2}s: aim {aimed - began:F2}s, " +
+                                $"type {typed - aimed:F2}s, " +
+                                $"poll {Time.realtimeSinceStartup - typed:F2}s ({polls} rounds)");
+                if (!outcome.Ok)
+                {
+                    Harness.Log($"B9WINDOW attempt {attempt} typing {value:F3} into {field} " +
+                                $"left {got:F4} - B9 rewrote the box mid-edit; retyping");
+                    outcome.Why = $"{field} held {got:F4} rather than {value:F3} after {attempt} attempts";
+                }
+            }
+        }
+
+        /// <summary>
+        /// Type into each of B9's own window's dimension boxes.
+        /// </summary>
+        private static IEnumerator PWingsTypedJWindowDimensions(TestContext context)
+        {
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            var rig = new WingRig();
+            yield return BuildWingRig(context, rig, chord: 3f, thicknessRoot: 0.5f,
+                                      thicknessTip: 0.5f, oblique: false);
+            if (!rig.Ok) yield break;
+
+            if (!B9Window.Install()) { context.Skip(B9Window.Unavailable); yield break; }
+            if (!B9Window.Open(rig.Wing)) { context.Skip("B9's window would not open"); yield break; }
+            if (!B9Window.SetNumeric(true)) { context.Skip("B9 has no numeric input mode"); yield break; }
+
+            // Its window is drawn from OnGUI, so nothing is known about it until B9
+            // has had frames in which to draw.
+            yield return context.Frames(60);
+
+            Harness.Log($"B9WINDOW boxes: {B9Window.Seen()}");
+
+            // The base group, in the order B9 draws it. Occurrence matters: the edge
+            // groups further down repeat the names "Width (root)" and "Width (tip)".
+            var wanted = new[]
+            {
+                new { Label = "Length",           Occurrence = 0, Field = "sharedBaseLength",         Value = "4.5"  },
+                new { Label = "Width (root)",     Occurrence = 0, Field = "sharedBaseWidthRoot",      Value = "2.5"  },
+                new { Label = "Width (tip)",      Occurrence = 0, Field = "sharedBaseWidthTip",       Value = "1.5"  },
+                new { Label = "Offset (tip)",     Occurrence = 0, Field = "sharedBaseOffsetTip",      Value = "0.75" },
+                new { Label = "Thickness (root)", Occurrence = 0, Field = "sharedBaseThicknessRoot",  Value = "0.35" },
+                new { Label = "Thickness (tip)",  Occurrence = 0, Field = "sharedBaseThicknessTip",   Value = "0.25" },
+            };
+
+            foreach (var target in wanted)
+            {
+                if (!B9Window.TryBoxFor(target.Label, out int bx, out int by, target.Occurrence))
+                {
+                    context.Result.Fail($"B9's window drew no box for '{target.Label}'");
+                    continue;
+                }
+
+                yield return context.Say($"Typing {target.Value} into B9's \"{target.Label}\" box.",
+                                         "B9's own window, its own text box, typed at.");
+
+                var aim = new PointOutcome();
+                yield return PointAt(context, bx, by, aim);
+                if (!aim.Ok)
+                {
+                    context.Skip($"the pointer did not reach '{target.Label}': {aim.Detail}");
+                    B9Window.Close();
+                    yield break;
+                }
+
+                var typedStep = new TypedOutcome();
+                yield return TypeIntoB9Box(context, rig.Wing, target.Field,
+                                           float.Parse(target.Value), bx, by, typedStep);
+
+                float got = PartFields.Get(rig.Wing, PWingModule, target.Field);
+                Harness.Log($"B9WINDOW typed {target.Value} into '{target.Label}' -> " +
+                            $"{target.Field} = {got:F4}");
+                context.CheckTrue($"typed '{target.Label}' reached {target.Field} " +
+                                  $"(got {got:F4})", typedStep.Ok);
+            }
+
+            // Once, now the whole group has been typed, so B9 has finished rebuilding
+            // before anything is measured off the geometry.
+            yield return context.Settled();
+
+            // --- and the two edge groups below the base one ----------------------
+            //
+            // Their fields carry the SAME labels as the base group's, which is why
+            // everything here is addressed by draw order. Which of the two is the
+            // leading edge and which the trailing is not something to assume, so four
+            // distinct values go in and the four edge fields are read back to see
+            // where each landed.
+            var edges = new[]
+            {
+                new { Occurrence = 1, Label = "Width (root)", Value = "0.61" },
+                new { Occurrence = 1, Label = "Width (tip)",  Value = "0.41" },
+                new { Occurrence = 2, Label = "Width (root)", Value = "0.81" },
+                new { Occurrence = 2, Label = "Width (tip)",  Value = "0.31" },
+            };
+
+            var typed = new List<float>();
+            foreach (var edge in edges)
+            {
+                if (!B9Window.TryBoxFor(edge.Label, out int ex, out int ey, edge.Occurrence))
+                {
+                    context.Result.Fail($"B9's window drew no '{edge.Label}' box in edge group " +
+                                        $"{edge.Occurrence}");
+                    continue;
+                }
+
+                yield return context.Say($"Typing {edge.Value} into edge group {edge.Occurrence}'s " +
+                                         $"\"{edge.Label}\" box.",
+                                         "Same label as the base group's, a different box.");
+
+                // Which field this box writes to is settled below; for the typing
+                // itself only the value matters, so it is verified against whichever
+                // edge field ends up holding it.
+                var edgeStep = new TypedOutcome();
+                yield return TypeIntoB9Box(context, rig.Wing, EdgeFieldFor(edge.Occurrence, edge.Label),
+                                           float.Parse(edge.Value), ex, ey, edgeStep);
+                if (!edgeStep.Ok) Harness.Log($"B9WINDOW edge typing: {edgeStep.Why}");
+                typed.Add(float.Parse(edge.Value));
+            }
+
+            // The mapping, measured rather than assumed: four distinct values went in
+            // and each came out of exactly one field, so the group B9 draws first is
+            // the LEADING edge and the second is the trailing one. Written as exact
+            // checks now that it is known - a weaker "the value arrived somewhere"
+            // test would pass just as happily with the two groups swapped, which is
+            // the mistake the identical labels invite.
+            var expected = new[]
+            {
+                new { Field = "sharedEdgeWidthLeadingRoot",  Value = 0.61f },
+                new { Field = "sharedEdgeWidthLeadingTip",   Value = 0.41f },
+                new { Field = "sharedEdgeWidthTrailingRoot", Value = 0.81f },
+                new { Field = "sharedEdgeWidthTrailingTip",  Value = 0.31f },
+            };
+            foreach (var one in expected)
+            {
+                float got = PartFields.Get(rig.Wing, PWingModule, one.Field);
+                Harness.Log($"B9WINDOW edge {one.Field} = {got:F4}");
+                context.Check($"the edge box typed with {one.Value:F2} reached {one.Field}",
+                              got, one.Value, 0.02f);
+            }
+            if (typed.Count != expected.Length)
+                context.Result.Fail($"only {typed.Count} of {expected.Length} edge boxes were typed into");
+
+            B9Window.Close();
+            yield return context.Frames(4);
+        }
+
+        /// <summary>Which B9 edge field a window box writes to.</summary>
+        /// <param name="occurrence">Which edge group it is in, 1 first or 2 second.</param>
+        /// <param name="label">The box's label, which says root or tip.</param>
+        /// <remarks>
+        /// Measured, not assumed: four distinct values typed into the four boxes came
+        /// out of exactly these four fields. The first group B9 draws is the leading
+        /// edge and the second is the trailing one, which is not something the
+        /// identical labels would ever tell you.
+        /// </remarks>
+        private static string EdgeFieldFor(int occurrence, string label)
+        {
+            bool leading = occurrence == 1;
+            bool root = label.Contains("root");
+            return leading
+                ? (root ? "sharedEdgeWidthLeadingRoot" : "sharedEdgeWidthLeadingTip")
+                : (root ? "sharedEdgeWidthTrailingRoot" : "sharedEdgeWidthTrailingTip");
+        }
+
         /// <summary>The RO-Tanks module these scenarios drive.</summary>
         private const string ROModule = "ModuleROTank";
 
@@ -7143,13 +7403,28 @@ namespace DimensionSync.GameTests
             Harness.Log($"TYPED aiming {fieldName} at ({x}, {y}) over " +
                         $"{PartActionWindow.WhatIsUnder(x, y)}");
             SyntheticInput.Click();
-            yield return context.Frames(10);
-            SyntheticInput.Press("ctrl+a");
             yield return context.Frames(4);
+            SyntheticInput.Press("ctrl+a");
+            yield return context.Frames(2);
             SyntheticInput.TypeText(value);
-            yield return context.Frames(10);
+            yield return context.Frames(4);
             SyntheticInput.Press("Return");
-            yield return context.Settled();
+
+            // As in B9's window: wait for the number to arrive rather than for the
+            // ship to go quiet. Where the value cannot be parsed there is nothing to
+            // wait for, so fall back to a settle.
+            if (float.TryParse(value, out float wanted))
+            {
+                for (int wait = 0; wait < 20; wait++)
+                {
+                    if (Mathf.Abs(PartFields.Get(part, moduleName, fieldName) - wanted) <= 0.02f) break;
+                    yield return context.Frames(2);
+                }
+            }
+            else
+            {
+                yield return context.Settled();
+            }
             outcome.Ok = true;
         }
 
