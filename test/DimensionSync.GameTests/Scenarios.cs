@@ -140,6 +140,34 @@ namespace DimensionSync.GameTests
                 "The base case again, but against ROLib, whose field name and change handling "
                 + "are nothing like ProceduralParts'.");
 
+            yield return New("rolib_stack_propagates_downwards", ROLibStackPropagatesDownwards,
+                "The same RO-Tanks stack driven from the TOP instead of the bottom. "
+                + "ROLib rewrites a tank's length whenever its diameter changes, so a "
+                + "run that works upwards proves less than it looks - this says the "
+                + "walk is not relying on the direction the parent chain happens to "
+                + "run.");
+
+            yield return New("rolib_stops_at_a_different_size", ROLibStopsAtADifferentSize,
+                "An odd-sized RO tank part way up the stack. The change should reach "
+                + "the tank that matches and stop at the one that does not, exactly as "
+                + "it does for ProceduralParts - the rule is about the sizes, not "
+                + "about whose part it is.");
+
+            yield return New("rolib_symmetry_counterparts_follow", ROLibSymmetryCounterpartsFollow,
+                "RO-Tanks boosters on both sides of an RO-Tanks core. The far side is "
+                + "not reachable by walking the ship, and follows only because writes "
+                + "go out to symmetry counterparts. Worth having against ROLib "
+                + "specifically: it writes its OWN counterparts too, through the field "
+                + "API and then an onFieldChanged it invokes by hand, so this is the "
+                + "one place two mods are both mirroring the same edit.");
+
+            yield return New("rolib_idle_stack_is_left_alone", ROLibIdleStackIsLeftAlone,
+                "Two RO tanks of deliberately different sizes, left alone. ROLib "
+                + "rewrites length from diameter on its own account, which is a write "
+                + "this mod can see and must not mistake for somebody editing the "
+                + "part - a stack that tidies itself up while nobody is touching it "
+                + "would be this mod feeding on another mod's output.");
+
             yield return New("mixed_pp_and_rolib_stack", MixedPPAndROLibStack,
                 "A ProceduralParts tank under an RO-Tanks tank. The change has to cross "
                 + "between two mods that share nothing but the attach node between them. "
@@ -6649,6 +6677,233 @@ namespace DimensionSync.GameTests
 
             context.Check("upper RO tank diameter",
                           PartFields.Get(stack.Parts[1], "ModuleROTank", "currentDiameter"), 3f);
+        }
+
+        /// <summary>The RO-Tanks module these scenarios drive.</summary>
+        private const string ROModule = "ModuleROTank";
+
+        /// <summary>Its stack diameter field. ROLib inherits the name from SSTU.</summary>
+        private const string ROField = "currentDiameter";
+
+        /// <summary>Whichever RO-Tanks tank this install has, or null if it has none.</summary>
+        /// <remarks>
+        /// Any of the three will do - they are the same module with different meshes -
+        /// so the scenarios take what is there rather than insisting on one part and
+        /// skipping on an install that has the others.
+        /// </remarks>
+        private static string ROTankPart()
+        {
+            return FirstInstalled("ROT-GenericTank", "ROT-BoosterTank", "ROT-AtlasTank");
+        }
+
+        /// <summary>
+        /// The downward walk against ROLib, driven from the top of the stack.
+        /// </summary>
+        private static IEnumerator ROLibStackPropagatesDownwards(TestContext context)
+        {
+            string tank = ROTankPart();
+            if (tank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var stack = new Stack();
+            yield return BuildStack(context, stack, tank, ROModule, ROField, 2f, 2f, 2f);
+            if (!stack.Ok) yield break;
+
+            // Budgeted before anything moves, because these get longer as well as
+            // wider: this part has lengthWidth set, so ROLib raises the minimum
+            // length as the domed ends grow with the diameter.
+            EditorBuilder.WillEdit(stack.Parts[2], growth: 2f);
+
+            yield return context.Say("Setting the TOP RO tank to 3 m.",
+                                     "Both tanks below it should follow to 3 m.\n\n"
+                                     + "They will get longer too. That is ROLib tying length to diameter, "
+                                     + "not anything this mod wrote.");
+
+            PartFields.Set(stack.Parts[2], ROModule, ROField, 3f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            context.Check("middle tank followed",
+                          PartFields.Get(stack.Parts[1], ROModule, ROField), 3f);
+            context.Check("bottom tank followed",
+                          PartFields.Get(stack.Parts[0], ROModule, ROField), 3f);
+        }
+
+        /// <summary>
+        /// An odd-sized RO tank ends the run, the same way an odd-sized procedural
+        /// one does.
+        /// </summary>
+        private static IEnumerator ROLibStopsAtADifferentSize(TestContext context)
+        {
+            string tank = ROTankPart();
+            if (tank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var stack = new Stack();
+            yield return BuildStack(context, stack, tank, ROModule, ROField, 2f, 2f, 3f, 2f);
+            if (!stack.Ok) yield break;
+
+            EditorBuilder.WillEdit(stack.Parts[0], growth: 2f);
+
+            yield return context.Say("Setting the bottom RO tank to 2.5 m.",
+                                     "The tank above it matches and should follow. The 3 m tank does not "
+                                     + "match, so it and the 2 m tank beyond it should both stay put.");
+
+            PartFields.Set(stack.Parts[0], ROModule, ROField, 2.5f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            context.Check("second tank follows",
+                          PartFields.Get(stack.Parts[1], ROModule, ROField), 2.5f);
+            context.Check("odd-sized tank unchanged",
+                          PartFields.Get(stack.Parts[2], ROModule, ROField), 3f);
+            context.Check("tank beyond it unchanged",
+                          PartFields.Get(stack.Parts[3], ROModule, ROField), 2f);
+        }
+
+        /// <summary>
+        /// RO-Tanks boosters mirrored on both sides: the far side follows without
+        /// being reachable.
+        /// </summary>
+        private static IEnumerator ROLibSymmetryCounterpartsFollow(TestContext context)
+        {
+            var rig = new BoosterRig();
+            yield return BuildROBoosterRig(context, rig);
+            if (!rig.Ok) yield break;
+
+            EditorBuilder.WillEdit(rig.Booster[0], growth: 2f);
+
+            yield return context.Say("Taking the LOWER booster on ONE side from 1.5 m to 2.5 m.",
+                                     "The booster above it should follow by the ordinary walk.\n\n"
+                                     + "On the far side, the LOWER booster follows because a part action "
+                                     + "window edit goes out to symmetry counterparts by itself - stock does "
+                                     + "that, and the harness copies it, so that one is a fixture check "
+                                     + "rather than a test of this mod. The UPPER one is the real "
+                                     + "assertion: nothing can walk to it and no window edit touched it, so "
+                                     + "it can only be reached by this mod propagating to the booster below "
+                                     + "it and that write going out to ITS counterpart.");
+
+            PartFields.Set(rig.Booster[0], ROModule, ROField, 2.5f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            context.Check("upper booster on the edited side follows",
+                          PartFields.Get(rig.Booster[1], ROModule, ROField), 2.5f);
+            // The window edit mirrors this one by itself, so it says the fixture is
+            // sound rather than that the mod did anything.
+            context.Check("fixture: the window edit reached the mirrored lower booster",
+                          PartFields.Get(rig.Mirror[0], ROModule, ROField), 2.5f);
+
+            // This one is the point. Two hops from anything the player touched: this
+            // mod had to propagate up the near side, and that write had to carry to
+            // the counterpart of the part it landed on.
+            context.Check("upper booster on the mirrored side follows",
+                          PartFields.Get(rig.Mirror[1], ROModule, ROField), 2.5f);
+            context.Check("core untouched",
+                          PartFields.Get(rig.Core[0], ROModule, ROField), 4f);
+        }
+
+        /// <summary>
+        /// Two mismatched RO tanks, left alone, must stay mismatched.
+        /// </summary>
+        /// <remarks>
+        /// The same guard the ProceduralParts stack has, against a mod that tidies up
+        /// a craft nobody is touching and then reacts to its own result. Lengths are
+        /// checked as well as diameters because ROLib drives length from diameter, so
+        /// a loop would show there first.
+        ///
+        /// Worth knowing what this does NOT establish. It was written expecting
+        /// ROLib's ValidateLength to write currentLength while the stack sat idle,
+        /// and the run says otherwise: not one currentLength write went through the
+        /// field API in the whole suite, though our own scenario text has long said
+        /// these tanks lengthen when they widen. So ROLib assigns that field directly
+        /// rather than through BaseField, the way B9 does - which would put it out of
+        /// reach of the general hook. Unconfirmed, and worth confirming before anyone
+        /// relies on length changes being visible.
+        /// </remarks>
+        private static IEnumerator ROLibIdleStackIsLeftAlone(TestContext context)
+        {
+            string tank = ROTankPart();
+            if (tank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var stack = new Stack();
+            yield return BuildStack(context, stack, tank, ROModule, ROField, 2f, 3f);
+            if (!stack.Ok) yield break;
+
+            float lowerLength = PartFields.Get(stack.Parts[0], ROModule, "currentLength");
+            float upperLength = PartFields.Get(stack.Parts[1], ROModule, "currentLength");
+
+            yield return context.Say("Doing nothing at all for ten frames.",
+                                     "Both tanks should still read the sizes they were built at, and their "
+                                     + "lengths should not have crept either.");
+
+            yield return context.Frames(10);
+
+            context.Check("lower tank unchanged",
+                          PartFields.Get(stack.Parts[0], ROModule, ROField), 2f);
+            context.Check("upper tank unchanged",
+                          PartFields.Get(stack.Parts[1], ROModule, ROField), 3f);
+            context.Check("lower tank length unchanged",
+                          PartFields.Get(stack.Parts[0], ROModule, "currentLength"), lowerLength);
+            context.Check("upper tank length unchanged",
+                          PartFields.Get(stack.Parts[1], ROModule, "currentLength"), upperLength);
+        }
+
+        /// <summary>
+        /// An all-RO-Tanks version of the booster rig: a core of two tanks with a
+        /// two-tank booster on each side, the sides linked as symmetry counterparts.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="rig">Filled in with the core and both booster stacks.</param>
+        private static IEnumerator BuildROBoosterRig(TestContext context, BoosterRig rig)
+        {
+            string tank = ROTankPart();
+            if (tank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var core = new Stack();
+            yield return BuildStack(context, core, tank, ROModule, ROField, 4f, 4f);
+            if (!core.Ok) yield break;
+            rig.Core = core.Parts;
+
+            var built = new Part[2][];
+            for (int side = 0; side < 2; side++)
+            {
+                var boosters = new Part[2];
+                for (int i = 0; i < boosters.Length; i++)
+                {
+                    boosters[i] = EditorBuilder.Spawn(tank);
+                    if (boosters[i] == null)
+                    {
+                        context.Skip("could not spawn an RO booster");
+                        yield break;
+                    }
+                }
+                yield return context.Frames(6);
+
+                foreach (Part part in boosters)
+                    PartFields.Set(part, ROModule, ROField, 1.5f, WriteMode.PartActionWindow);
+                yield return context.Frames(2);
+
+                EditorBuilder.PresentShip();
+                Vector3 outward = EditorBuilder.DirectionAcrossCamera(rig.Core[0]) * (side == 0 ? 1f : -1f);
+                if (!EditorBuilder.SurfaceAttach(rig.Core[0], boosters[0],
+                                                 outward * EditorBuilder.SurfaceRadius(rig.Core[0]))
+                    || !EditorBuilder.StackOnTop(boosters[0], boosters[1]))
+                {
+                    context.Result.Error("could not attach the RO booster stack");
+                    yield break;
+                }
+                built[side] = boosters;
+            }
+
+            rig.Booster = built[0];
+            rig.Mirror = built[1];
+            for (int i = 0; i < rig.Booster.Length; i++)
+                EditorBuilder.LinkSymmetry(rig.Booster[i], rig.Mirror[i]);
+
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+            yield return context.Say("Fixture built.",
+                                     "A 4 m RO-Tanks core of two tanks, with a booster stack of two 1.5 m "
+                                     + "RO tanks on each side, the two sides linked as mirror symmetry "
+                                     + "counterparts.");
+            rig.Ok = true;
         }
 
         /// <summary>
