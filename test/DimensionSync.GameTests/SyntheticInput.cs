@@ -26,7 +26,22 @@ namespace DimensionSync.GameTests
     internal static class SyntheticInput
     {
         /// <summary>The display an automated headless run is given.</summary>
-        private const string HeadlessDisplay = ":99";
+        /// <summary>
+        /// The runner sets this on a display it created and owns.
+        /// </summary>
+        /// <remarks>
+        /// This used to insist the display was ":99", which stopped being true the
+        /// moment the runner started asking xvfb-run for ANY free display - and it
+        /// had to, because a fixed number is shared with every other session on the
+        /// machine. Two games on one display send their synthetic clicks to whichever
+        /// window has focus, which is indistinguishable from the pointer missing.
+        ///
+        /// A number cannot answer "is this display disposable"; only whoever made it
+        /// knows. So the runner says so, and a display it did not make gets left
+        /// alone - the point of the check has always been never to grab a pointer
+        /// somebody is using.
+        /// </remarks>
+        private const string OwnedDisplayMarker = "DS_OWNS_DISPLAY";
 
         /// <summary>Whether the pointer may be moved at all.</summary>
         /// <remarks>
@@ -38,9 +53,19 @@ namespace DimensionSync.GameTests
         {
             get
             {
-                string display = System.Environment.GetEnvironmentVariable("DISPLAY");
-                if (string.IsNullOrEmpty(display) || !display.StartsWith(HeadlessDisplay)) return false;
+                if (!Owned) return false;
                 return Run("getdisplaygeometry", quiet: true);
+            }
+        }
+
+        /// <summary>Whether the runner made this display and so may drive its pointer.</summary>
+        private static bool Owned
+        {
+            get
+            {
+                string owned = System.Environment.GetEnvironmentVariable(OwnedDisplayMarker);
+                string display = System.Environment.GetEnvironmentVariable("DISPLAY");
+                return !string.IsNullOrEmpty(owned) && owned != "0" && !string.IsNullOrEmpty(display);
             }
         }
 
@@ -49,10 +74,10 @@ namespace DimensionSync.GameTests
         {
             get
             {
-                string display = System.Environment.GetEnvironmentVariable("DISPLAY");
-                if (string.IsNullOrEmpty(display) || !display.StartsWith(HeadlessDisplay))
-                    return $"the display is '{display}', not the throwaway {HeadlessDisplay} - " +
-                           "the pointer is somebody's, so this will not touch it";
+                if (!Owned)
+                    return $"the display '{System.Environment.GetEnvironmentVariable("DISPLAY")}' " +
+                           $"was not created by the test runner ({OwnedDisplayMarker} is not set) - " +
+                           "the pointer may be somebody's, so this will not touch it";
                 return "xdotool is not installed";
             }
         }
@@ -131,10 +156,22 @@ namespace DimensionSync.GameTests
         /// </remarks>
         public static void MoveTo(int x, int y)
         {
+            // No --sync. It blocks until X reports the pointer at the target, and
+            // against this window it regularly took 15.4 seconds to do so - a figure
+            // so consistent it is plainly a timeout being waited out rather than a
+            // move being watched. Six of those in one scenario were two of its three
+            // minutes.
+            //
+            // Nothing is lost by dropping it: every caller already checks the move
+            // landed with PointerAgrees, which compares against Unity's own
+            // Input.mousePosition and so answers the question that actually matters -
+            // where the GAME thinks the pointer is - rather than where X does. The
+            // callers retry on disagreement, which is what --sync was insuring
+            // against.
             string window = GameWindow;
             Run(window == null
-                    ? $"mousemove --sync {x} {y}"
-                    : $"mousemove --window {window} --sync {x} {y}");
+                    ? $"mousemove {x} {y}"
+                    : $"mousemove --window {window} {x} {y}");
         }
 
         /// <summary>
@@ -237,12 +274,22 @@ namespace DimensionSync.GameTests
 
         /// <summary>Type text, as at a keyboard.</summary>
         /// <param name="text">What to type. Digits and a decimal point, here.</param>
+        /// <param name="delayMs">Milliseconds between keystrokes; zero by default.</param>
         /// <remarks>
         /// A real key-by-key send rather than pasting: the input field this is aimed
         /// at validates as it goes, and a value that arrives all at once does not
         /// exercise that.
+        ///
+        /// No delay between keys by default, which matters for B9's window. Its boxes
+        /// are handed a freshly formatted string EVERY frame, and Unity's DoTextField
+        /// assigns that over the editor's contents unconditionally - so a keystroke
+        /// that lands after a redraw is inserted into a regenerated "x.xxx" rather
+        /// than after what was typed before it. Sending the whole value inside one
+        /// frame is what keeps that from happening; the retry around this is what
+        /// catches it when it does anyway.
         /// </remarks>
-        public static void TypeText(string text) => Run($"type --clearmodifiers -- '{text}'");
+        public static void TypeText(string text, int delayMs = 0)
+            => Run($"type --clearmodifiers --delay {delayMs} -- '{text}'");
 
         /// <summary>
         /// Where a piece of user interface sits on screen, in the same top-left
