@@ -3845,9 +3845,31 @@ namespace DimensionSync.GameTests
                                      "Its edges get steeper. The child's edges are collinear with "
                                      + "them, so the child has to follow - by shortening to suit.");
 
+            // Everything this step is entitled to touch, named up front. The parent's
+            // own span because that is the edit; the child's span because shortening it
+            // is how collinearity is kept; the flaps' spans and thicknesses because they
+            // ride the edges that just moved. Anything else moving is a bug, including
+            // on parts nobody here has thought about.
+            FieldWatch watch = context.WatchEverything();
+
             PartFields.Set(rig.Parent, PWingModule, "sharedBaseLength", 3f, WriteMode.DirectAssignment);
             yield return context.Settled();
             EditorBuilder.PresentShip();
+
+            watch.Allow(rig.Parent, "sharedBaseLength")
+                 // The child shortens to keep its edges collinear with the parent's,
+                 // and reshaping its tip is how it does that: narrower and further
+                 // offset to hold the two angles, thinner to hold the surfaces flat
+                 // through the joint. It also rides inboard, because the tip it is
+                 // mounted on has moved.
+                 .Allow(rig.Child, "sharedBaseLength")
+                 .Allow(rig.Child, "sharedBaseWidthTip")
+                 .Allow(rig.Child, "sharedBaseOffsetTip")
+                 .Allow(rig.Child, "sharedBaseThicknessTip")
+                 .AllowMove(rig.Child)
+                 .AllowAnything(rig.ParentFlap)
+                 .AllowAnything(rig.ChildFlap);
+            watch.NothingElseChanged("shortening the parent from 4 m to 3 m");
 
             float parentLead = EdgeAngleOf(rig.Parent, trailing: false);
             float childLead = EdgeAngleOf(rig.Child, trailing: false);
