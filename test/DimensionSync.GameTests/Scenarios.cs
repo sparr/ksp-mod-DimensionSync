@@ -140,11 +140,73 @@ namespace DimensionSync.GameTests
                 "The base case again, but against ROLib, whose field name and change handling "
                 + "are nothing like ProceduralParts'.");
 
+            yield return New("rolib_stack_propagates_downwards", ROLibStackPropagatesDownwards,
+                "The same RO-Tanks stack driven from the TOP instead of the bottom. "
+                + "ROLib rewrites a tank's length whenever its diameter changes, so a "
+                + "run that works upwards proves less than it looks - this says the "
+                + "walk is not relying on the direction the parent chain happens to "
+                + "run.");
+
+            yield return New("rolib_stops_at_a_different_size", ROLibStopsAtADifferentSize,
+                "An odd-sized RO tank part way up the stack. The change should reach "
+                + "the tank that matches and stop at the one that does not, exactly as "
+                + "it does for ProceduralParts - the rule is about the sizes, not "
+                + "about whose part it is.");
+
+            yield return New("rolib_symmetry_counterparts_follow", ROLibSymmetryCounterpartsFollow,
+                "RO-Tanks boosters on both sides of an RO-Tanks core. The far side is "
+                + "not reachable by walking the ship, and follows only because writes "
+                + "go out to symmetry counterparts. Worth having against ROLib "
+                + "specifically: it writes its OWN counterparts too, through the field "
+                + "API and then an onFieldChanged it invokes by hand, so this is the "
+                + "one place two mods are both mirroring the same edit.");
+
+            yield return New("rolib_mouse_click_links_length_to_diameter",
+                ROLibMouseClickLinksLengthToDiameter,
+                "An RO tank widened by pointing at it, right-clicking to open its part "
+                + "action window, and clicking the increment button - real input, all "
+                + "the way through. It settles two things nothing else does: that "
+                + "ROLib really does drive length from diameter, and whether it writes "
+                + "that length through the field API where our hook can see it, or "
+                + "around it the way B9 does. Skipped unless the run owns the display.");
+
+            yield return New("pp_typed_dimensions_reach_the_part", PPTypedDimensionsReachThePart,
+                "Every kind of dimension ProceduralParts has, typed in through the "
+                + "window's \"#\" boxes: a cylinder's single diameter and its length, "
+                + "then the same part as a cone, whose two ends are separate fields. "
+                + "One scenario in several steps rather than several scenarios, "
+                + "because the fixture and the open window are the expensive part. "
+                + "Skipped unless the run owns the display.");
+
+            yield return New("rolib_typed_diameter_reaches_the_tank", ROLibTypedDiameterReachesTheTank,
+                "An RO tank given an exact diameter by TYPING it. The window's \"#\" "
+                + "button swaps its sliders for text boxes - stock offers that only on "
+                + "float ranges, and KSPCommunityFixes extends it to the float-edit "
+                + "controls the procedural mods use - so the pointer turns it on, "
+                + "clicks into the box, and the keyboard does the rest. The only "
+                + "scenario where a dimension arrives as typed characters. Skipped "
+                + "unless the run owns the display.");
+
+            yield return New("rolib_idle_stack_is_left_alone", ROLibIdleStackIsLeftAlone,
+                "Two RO tanks of deliberately different sizes, left alone. ROLib "
+                + "rewrites length from diameter on its own account, which is a write "
+                + "this mod can see and must not mistake for somebody editing the "
+                + "part - a stack that tidies itself up while nobody is touching it "
+                + "would be this mod feeding on another mod's output.");
+
             yield return New("mixed_pp_and_rolib_stack", MixedPPAndROLibStack,
                 "A ProceduralParts tank under an RO-Tanks tank. The change has to cross "
                 + "between two mods that share nothing but the attach node between them. "
                 + "The RO tank will also grow longer, which is ROLib's own rule rather "
                 + "than anything DimensionSync did.");
+
+            yield return New("pp_paw_buttons_drive_a_mirrored_stack", PawButtonsDriveAMirroredStack,
+                "The only scenario that edits a part through KSP's REAL part action "
+                + "window instead of our reimplementation of it. It opens the window, "
+                + "finds the widget, and taps the increment button its listener is "
+                + "bound to, so KSP's own field-setting path runs - including the "
+                + "write out to symmetry counterparts, which every other scenario "
+                + "performs itself and therefore cannot be said to have tested.");
 
             yield return New("pp_booster_stack_syncs_within_itself", BoosterStackSyncsWithinItself,
                 "A two-tank booster strapped to the side of a core. Resizing the lower "
@@ -282,6 +344,14 @@ namespace DimensionSync.GameTests
                 + "instead, which skips the whole of B9's input handling - so this is "
                 + "the only one that can tell whether a drag behaves like a typed "
                 + "number. Skipped unless the run owns the display.");
+
+            yield return New("pwings_typed_j_window_dimensions", PWingsTypedJWindowDimensions,
+                "B9's dimensions typed into B9's own window. They are the one family "
+                + "this suite cannot reach through a part action window - every one is "
+                + "guiActiveEditor = false - so the only way in is the window B9 draws "
+                + "itself, and being IMGUI it has nothing to find. The boxes are "
+                + "located by watching B9 draw them. Skipped unless the run owns the "
+                + "display.");
 
             yield return New("pwings_span_runs_along_local_x", SpanRunsAlongLocalX,
                 "A measurement of B9, not of this mod: which of a wing's own axes its "
@@ -1324,6 +1394,95 @@ namespace DimensionSync.GameTests
                           PartFields.ProceduralPartsBuiltDiameter(rig.Mirror[1]), 2f);
             context.Check("core untouched",
                           PartFields.Get(rig.Core[0], PPShapeModule, "diameter"), 2.5f);
+        }
+
+        /// <summary>
+        /// The mirrored booster rig again, driven through the real part action
+        /// window rather than through our imitation of it.
+        /// </summary>
+        /// <remarks>
+        /// Everything else in this suite reaches a field with
+        /// WriteMode.PartActionWindow, which sets the field, fires onFieldChanged and
+        /// copies the value to the symmetry counterparts - because that is what we
+        /// believe the window does. A scenario built on that can confirm the belief
+        /// is self-consistent and nothing more. In particular the harness doing its
+        /// own symmetry pass means KSP's SetSymCounterpartValue has never run in this
+        /// suite, and neither has whatever another mod does in response to it.
+        ///
+        /// So this one taps the real widget and lets KSP do the rest.
+        /// </remarks>
+        private static IEnumerator PawButtonsDriveAMirroredStack(TestContext context)
+        {
+            var rig = new BoosterRig();
+            yield return BuildBoosterRig(context, rig, mirrored: true);
+            if (!rig.Ok) yield break;
+
+            float before = PartFields.Get(rig.Booster[0], PPShapeModule, "diameter");
+            EditorBuilder.WillEdit(rig.Booster[0], growth: 2f);
+
+            yield return context.Say("Opening the real part action window on one lower booster.",
+                                     "Not our stand-in for it: the window a right-click opens.");
+
+            if (!PartActionWindow.Open(rig.Booster[0], out string why))
+            {
+                // No UI at all means this run cannot do it; anything else is a
+                // failure, because a scenario that quietly skips reads exactly like
+                // one that passed.
+                context.Skip(why);
+                yield break;
+            }
+            yield return context.Frames(30);
+
+            UIPartActionFloatEdit edit =
+                PartActionWindow.FloatEditFor(rig.Booster[0], PPShapeModule, "diameter");
+            if (edit == null)
+            {
+                context.Result.Fail("the window opened but showed no diameter control to tap");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            yield return context.Say("Tapping the diameter's large increment button twice.",
+                                     "Both taps run KSP's own handler, so the value it settles on is the "
+                                     + "one the control's own increment and limits produce - not a number "
+                                     + "this test chose.\n\n"
+                                     + "The booster above should follow by propagation. The far side should "
+                                     + "follow because KSP writes a window edit out to symmetry "
+                                     + "counterparts, which nothing in this suite has exercised before.");
+
+            PartActionWindow.Tap(edit, up: true, large: true);
+            yield return context.Frames(4);
+            PartActionWindow.Tap(edit, up: true, large: true);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float after = PartFields.Get(rig.Booster[0], PPShapeModule, "diameter");
+            Harness.Log($"PAW diameter {before:F4} -> {after:F4} after two large taps");
+
+            // Nothing here asserts a chosen number. What the taps produce is KSP's
+            // business; what matters is that they produced something and that the
+            // rest of the craft agrees with it.
+            context.CheckTrue("the taps actually changed the tapped booster",
+                              Mathf.Abs(after - before) > 0.01f);
+            context.Check("upper booster on the tapped side follows",
+                          PartFields.Get(rig.Booster[1], PPShapeModule, "diameter"), after);
+            context.Check("lower booster on the mirrored side follows",
+                          PartFields.Get(rig.Mirror[0], PPShapeModule, "diameter"), after);
+            context.Check("upper booster on the mirrored side follows",
+                          PartFields.Get(rig.Mirror[1], PPShapeModule, "diameter"), after);
+
+            // Fields can hold the right number on a part still drawn the old size.
+            context.Check("tapped booster's mesh rebuilt",
+                          PartFields.ProceduralPartsBuiltDiameter(rig.Booster[0]), after);
+            context.Check("mirrored upper booster's mesh rebuilt",
+                          PartFields.ProceduralPartsBuiltDiameter(rig.Mirror[1]), after);
+            context.Check("core untouched",
+                          PartFields.Get(rig.Core[0], PPShapeModule, "diameter"), 2.5f);
+
+            // Left open, this window and its selection are inherited by whatever runs
+            // next - which is how a gizmo scenario once poisoned the rest of a run.
+            PartActionWindow.CloseAll();
+            yield return context.Frames(4);
         }
 
         /// <summary>
@@ -4624,11 +4783,30 @@ namespace DimensionSync.GameTests
 
             for (int attempt = 1; attempt <= 4; attempt++)
             {
+                float t0 = Time.realtimeSinceStartup;
                 SyntheticInput.FocusOwnWindow();
+                float t1 = Time.realtimeSinceStartup;
                 SyntheticInput.MoveTo(x, y);
+                float t2 = Time.realtimeSinceStartup;
                 yield return context.Frames(6);
+                float t3 = Time.realtimeSinceStartup;
 
-                if (SyntheticInput.PointerAgrees(x, y, out string where))
+                bool agreed = SyntheticInput.PointerAgrees(x, y, out string where);
+
+                // Silent unless something stalls. Aiming is three subprocess calls
+                // and six frames and should cost under a second; it once cost
+                // seventeen, because xdotool's --sync sat waiting out a 15.4 s
+                // timeout on every other move. Nothing in the results said so - the
+                // scenario passed, it was merely slow - and it took four wrong
+                // guesses before anyone timed the parts separately. Leaving the
+                // stopwatch in costs a comparison per aim and means the next stall
+                // announces itself.
+                float spent = Time.realtimeSinceStartup - t0;
+                if (spent > 2f)
+                    Harness.Log($"SLOW aim took {spent:F2}s: focus {t1 - t0:F2}s, " +
+                                $"move {t2 - t1:F2}s, frames {t3 - t2:F2}s, " +
+                                $"check {Time.realtimeSinceStartup - t3:F2}s");
+                if (agreed)
                 {
                     outcome.Ok = true;
                     outcome.Detail = where;
@@ -6649,6 +6827,1027 @@ namespace DimensionSync.GameTests
 
             context.Check("upper RO tank diameter",
                           PartFields.Get(stack.Parts[1], "ModuleROTank", "currentDiameter"), 3f);
+        }
+
+        /// <summary>
+        /// Type a value into one of B9's boxes, checking it took and retrying if not.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="wing">The wing being edited.</param>
+        /// <param name="field">The B9 field the box writes to.</param>
+        /// <param name="value">The value to type.</param>
+        /// <param name="x">The box's horizontal position.</param>
+        /// <param name="y">The box's vertical position.</param>
+        /// <param name="outcome">Whether the field ended up holding the value.</param>
+        /// <remarks>
+        /// The retry is not defensive padding, it is the point. B9 hands its text box
+        /// a freshly formatted string on every frame, and Unity writes that straight
+        /// over whatever is being edited, so a keystroke arriving after a redraw is
+        /// inserted into a regenerated "x.xxx" instead of after the digits already
+        /// typed. The usual result is a value a thousandth or so off what was asked
+        /// for, and a field being driven to zero can be impossible to clear at all
+        /// because each deletion is undone by the next redraw.
+        ///
+        /// This scenario passed twice by luck before that was understood. Typing the
+        /// value inside a single frame makes it rare; checking and retyping makes it
+        /// not matter; logging the retries means the day it gets worse, the log says
+        /// so rather than the suite simply going red somewhere else.
+        /// </remarks>
+        private static IEnumerator TypeIntoB9Box(TestContext context, Part wing, string field,
+                                                 float value, int x, int y, TypedOutcome outcome)
+        {
+            outcome.Ok = false;
+
+            for (int attempt = 1; attempt <= 4 && !outcome.Ok; attempt++)
+            {
+                float began = Time.realtimeSinceStartup;
+                var aim = new PointOutcome();
+                yield return PointAt(context, x, y, aim);
+                float aimed = Time.realtimeSinceStartup;
+                if (!aim.Ok)
+                {
+                    outcome.Why = $"the pointer did not reach {field}'s box: {aim.Detail}";
+                    yield break;
+                }
+
+                SyntheticInput.Click();
+                yield return context.Frames(3);
+                SyntheticInput.Press("ctrl+a");
+                yield return context.Frames(2);
+                SyntheticInput.TypeText(value.ToString("0.###"));
+                yield return context.Frames(3);
+                SyntheticInput.Press("Return");
+
+                // Wait for the field, not for the ship. B9 parses and applies the
+                // value inside its own OnGUI, so a full settle after every box waits
+                // out a rebuild that has nothing to do with whether the typing
+                // worked - and at a 2.5 s cap across ten boxes that was most of the
+                // three minutes this scenario used to cost. Polling stops the moment
+                // the number arrives, and the retry below still catches the case
+                // where it never does.
+                float typed = Time.realtimeSinceStartup;
+                float got = float.NaN;
+                int polls = 0;
+                for (; polls < 20; polls++)
+                {
+                    got = PartFields.Get(wing, PWingModule, field);
+                    if (Mathf.Abs(got - value) <= 0.02f) break;
+                    yield return context.Frames(2);
+                }
+                outcome.Ok = Mathf.Abs(got - value) <= 0.02f;
+                float cost = Time.realtimeSinceStartup - began;
+                if (cost > 5f)
+                    Harness.Log($"SLOW typing {field} took {cost:F2}s: aim {aimed - began:F2}s, " +
+                                $"type {typed - aimed:F2}s, " +
+                                $"poll {Time.realtimeSinceStartup - typed:F2}s ({polls} rounds)");
+                if (!outcome.Ok)
+                {
+                    Harness.Log($"B9WINDOW attempt {attempt} typing {value:F3} into {field} " +
+                                $"left {got:F4} - B9 rewrote the box mid-edit; retyping");
+                    outcome.Why = $"{field} held {got:F4} rather than {value:F3} after {attempt} attempts";
+                }
+            }
+        }
+
+        /// <summary>
+        /// Type into each of B9's own window's dimension boxes.
+        /// </summary>
+        private static IEnumerator PWingsTypedJWindowDimensions(TestContext context)
+        {
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            var rig = new WingRig();
+            yield return BuildWingRig(context, rig, chord: 3f, thicknessRoot: 0.5f,
+                                      thicknessTip: 0.5f, oblique: false);
+            if (!rig.Ok) yield break;
+
+            if (!B9Window.Install()) { context.Skip(B9Window.Unavailable); yield break; }
+            if (!B9Window.Open(rig.Wing)) { context.Skip("B9's window would not open"); yield break; }
+            if (!B9Window.SetNumeric(true)) { context.Skip("B9 has no numeric input mode"); yield break; }
+
+            // Its window is drawn from OnGUI, so nothing is known about it until B9
+            // has had frames in which to draw.
+            yield return context.Frames(60);
+
+            Harness.Log($"B9WINDOW boxes: {B9Window.Seen()}");
+
+            // The base group, in the order B9 draws it. Occurrence matters: the edge
+            // groups further down repeat the names "Width (root)" and "Width (tip)".
+            var wanted = new[]
+            {
+                new { Label = "Length",           Occurrence = 0, Field = "sharedBaseLength",         Value = "4.5"  },
+                new { Label = "Width (root)",     Occurrence = 0, Field = "sharedBaseWidthRoot",      Value = "2.5"  },
+                new { Label = "Width (tip)",      Occurrence = 0, Field = "sharedBaseWidthTip",       Value = "1.5"  },
+                new { Label = "Offset (tip)",     Occurrence = 0, Field = "sharedBaseOffsetTip",      Value = "0.75" },
+                new { Label = "Thickness (root)", Occurrence = 0, Field = "sharedBaseThicknessRoot",  Value = "0.35" },
+                new { Label = "Thickness (tip)",  Occurrence = 0, Field = "sharedBaseThicknessTip",   Value = "0.25" },
+            };
+
+            foreach (var target in wanted)
+            {
+                if (!B9Window.TryBoxFor(target.Label, out int bx, out int by, target.Occurrence))
+                {
+                    context.Result.Fail($"B9's window drew no box for '{target.Label}'");
+                    continue;
+                }
+
+                yield return context.Say($"Typing {target.Value} into B9's \"{target.Label}\" box.",
+                                         "B9's own window, its own text box, typed at.");
+
+                var aim = new PointOutcome();
+                yield return PointAt(context, bx, by, aim);
+                if (!aim.Ok)
+                {
+                    context.Skip($"the pointer did not reach '{target.Label}': {aim.Detail}");
+                    B9Window.Close();
+                    yield break;
+                }
+
+                var typedStep = new TypedOutcome();
+                yield return TypeIntoB9Box(context, rig.Wing, target.Field,
+                                           float.Parse(target.Value), bx, by, typedStep);
+
+                float got = PartFields.Get(rig.Wing, PWingModule, target.Field);
+                Harness.Log($"B9WINDOW typed {target.Value} into '{target.Label}' -> " +
+                            $"{target.Field} = {got:F4}");
+                context.CheckTrue($"typed '{target.Label}' reached {target.Field} " +
+                                  $"(got {got:F4})", typedStep.Ok);
+            }
+
+            // Once, now the whole group has been typed, so B9 has finished rebuilding
+            // before anything is measured off the geometry.
+            yield return context.Settled();
+
+            // --- and the two edge groups below the base one ----------------------
+            //
+            // Their fields carry the SAME labels as the base group's, which is why
+            // everything here is addressed by draw order. Which of the two is the
+            // leading edge and which the trailing is not something to assume, so four
+            // distinct values go in and the four edge fields are read back to see
+            // where each landed.
+            var edges = new[]
+            {
+                new { Occurrence = 1, Label = "Width (root)", Value = "0.61" },
+                new { Occurrence = 1, Label = "Width (tip)",  Value = "0.41" },
+                new { Occurrence = 2, Label = "Width (root)", Value = "0.81" },
+                new { Occurrence = 2, Label = "Width (tip)",  Value = "0.31" },
+            };
+
+            var typed = new List<float>();
+            foreach (var edge in edges)
+            {
+                if (!B9Window.TryBoxFor(edge.Label, out int ex, out int ey, edge.Occurrence))
+                {
+                    context.Result.Fail($"B9's window drew no '{edge.Label}' box in edge group " +
+                                        $"{edge.Occurrence}");
+                    continue;
+                }
+
+                yield return context.Say($"Typing {edge.Value} into edge group {edge.Occurrence}'s " +
+                                         $"\"{edge.Label}\" box.",
+                                         "Same label as the base group's, a different box.");
+
+                // Which field this box writes to is settled below; for the typing
+                // itself only the value matters, so it is verified against whichever
+                // edge field ends up holding it.
+                var edgeStep = new TypedOutcome();
+                yield return TypeIntoB9Box(context, rig.Wing, EdgeFieldFor(edge.Occurrence, edge.Label),
+                                           float.Parse(edge.Value), ex, ey, edgeStep);
+                if (!edgeStep.Ok) Harness.Log($"B9WINDOW edge typing: {edgeStep.Why}");
+                typed.Add(float.Parse(edge.Value));
+            }
+
+            // The mapping, measured rather than assumed: four distinct values went in
+            // and each came out of exactly one field, so the group B9 draws first is
+            // the LEADING edge and the second is the trailing one. Written as exact
+            // checks now that it is known - a weaker "the value arrived somewhere"
+            // test would pass just as happily with the two groups swapped, which is
+            // the mistake the identical labels invite.
+            var expected = new[]
+            {
+                new { Field = "sharedEdgeWidthLeadingRoot",  Value = 0.61f },
+                new { Field = "sharedEdgeWidthLeadingTip",   Value = 0.41f },
+                new { Field = "sharedEdgeWidthTrailingRoot", Value = 0.81f },
+                new { Field = "sharedEdgeWidthTrailingTip",  Value = 0.31f },
+            };
+            foreach (var one in expected)
+            {
+                float got = PartFields.Get(rig.Wing, PWingModule, one.Field);
+                Harness.Log($"B9WINDOW edge {one.Field} = {got:F4}");
+                context.Check($"the edge box typed with {one.Value:F2} reached {one.Field}",
+                              got, one.Value, 0.02f);
+            }
+            if (typed.Count != expected.Length)
+                context.Result.Fail($"only {typed.Count} of {expected.Length} edge boxes were typed into");
+
+            B9Window.Close();
+            yield return context.Frames(4);
+        }
+
+        /// <summary>Which B9 edge field a window box writes to.</summary>
+        /// <param name="occurrence">Which edge group it is in, 1 first or 2 second.</param>
+        /// <param name="label">The box's label, which says root or tip.</param>
+        /// <remarks>
+        /// Measured, not assumed: four distinct values typed into the four boxes came
+        /// out of exactly these four fields. The first group B9 draws is the leading
+        /// edge and the second is the trailing one, which is not something the
+        /// identical labels would ever tell you.
+        /// </remarks>
+        private static string EdgeFieldFor(int occurrence, string label)
+        {
+            bool leading = occurrence == 1;
+            bool root = label.Contains("root");
+            return leading
+                ? (root ? "sharedEdgeWidthLeadingRoot" : "sharedEdgeWidthLeadingTip")
+                : (root ? "sharedEdgeWidthTrailingRoot" : "sharedEdgeWidthTrailingTip");
+        }
+
+        /// <summary>The RO-Tanks module these scenarios drive.</summary>
+        private const string ROModule = "ModuleROTank";
+
+        /// <summary>Its stack diameter field. ROLib inherits the name from SSTU.</summary>
+        private const string ROField = "currentDiameter";
+
+        /// <summary>Whichever RO-Tanks tank this install has, or null if it has none.</summary>
+        /// <remarks>
+        /// Any of the three will do - they are the same module with different meshes -
+        /// so the scenarios take what is there rather than insisting on one part and
+        /// skipping on an install that has the others.
+        /// </remarks>
+        private static string ROTankPart()
+        {
+            return FirstInstalled("ROT-GenericTank", "ROT-BoosterTank", "ROT-AtlasTank");
+        }
+
+        /// <summary>
+        /// The downward walk against ROLib, driven from the top of the stack.
+        /// </summary>
+        private static IEnumerator ROLibStackPropagatesDownwards(TestContext context)
+        {
+            string tank = ROTankPart();
+            if (tank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var stack = new Stack();
+            yield return BuildStack(context, stack, tank, ROModule, ROField, 2f, 2f, 2f);
+            if (!stack.Ok) yield break;
+
+            // Budgeted before anything moves, because these get longer as well as
+            // wider: this part has lengthWidth set, so ROLib raises the minimum
+            // length as the domed ends grow with the diameter.
+            EditorBuilder.WillEdit(stack.Parts[2], growth: 2f);
+
+            yield return context.Say("Setting the TOP RO tank to 3 m.",
+                                     "Both tanks below it should follow to 3 m.\n\n"
+                                     + "They will get longer too. That is ROLib tying length to diameter, "
+                                     + "not anything this mod wrote.");
+
+            PartFields.Set(stack.Parts[2], ROModule, ROField, 3f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            context.Check("middle tank followed",
+                          PartFields.Get(stack.Parts[1], ROModule, ROField), 3f);
+            context.Check("bottom tank followed",
+                          PartFields.Get(stack.Parts[0], ROModule, ROField), 3f);
+        }
+
+        /// <summary>
+        /// An odd-sized RO tank ends the run, the same way an odd-sized procedural
+        /// one does.
+        /// </summary>
+        private static IEnumerator ROLibStopsAtADifferentSize(TestContext context)
+        {
+            string tank = ROTankPart();
+            if (tank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var stack = new Stack();
+            yield return BuildStack(context, stack, tank, ROModule, ROField, 2f, 2f, 3f, 2f);
+            if (!stack.Ok) yield break;
+
+            EditorBuilder.WillEdit(stack.Parts[0], growth: 2f);
+
+            yield return context.Say("Setting the bottom RO tank to 2.5 m.",
+                                     "The tank above it matches and should follow. The 3 m tank does not "
+                                     + "match, so it and the 2 m tank beyond it should both stay put.");
+
+            PartFields.Set(stack.Parts[0], ROModule, ROField, 2.5f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            context.Check("second tank follows",
+                          PartFields.Get(stack.Parts[1], ROModule, ROField), 2.5f);
+            context.Check("odd-sized tank unchanged",
+                          PartFields.Get(stack.Parts[2], ROModule, ROField), 3f);
+            context.Check("tank beyond it unchanged",
+                          PartFields.Get(stack.Parts[3], ROModule, ROField), 2f);
+        }
+
+        /// <summary>
+        /// RO-Tanks boosters mirrored on both sides: the far side follows without
+        /// being reachable.
+        /// </summary>
+        private static IEnumerator ROLibSymmetryCounterpartsFollow(TestContext context)
+        {
+            var rig = new BoosterRig();
+            yield return BuildROBoosterRig(context, rig);
+            if (!rig.Ok) yield break;
+
+            EditorBuilder.WillEdit(rig.Booster[0], growth: 2f);
+
+            yield return context.Say("Taking the LOWER booster on ONE side from 1.5 m to 2.5 m.",
+                                     "The booster above it should follow by the ordinary walk.\n\n"
+                                     + "On the far side, the LOWER booster follows because a part action "
+                                     + "window edit goes out to symmetry counterparts by itself - stock does "
+                                     + "that, and the harness copies it, so that one is a fixture check "
+                                     + "rather than a test of this mod. The UPPER one is the real "
+                                     + "assertion: nothing can walk to it and no window edit touched it, so "
+                                     + "it can only be reached by this mod propagating to the booster below "
+                                     + "it and that write going out to ITS counterpart.");
+
+            PartFields.Set(rig.Booster[0], ROModule, ROField, 2.5f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            context.Check("upper booster on the edited side follows",
+                          PartFields.Get(rig.Booster[1], ROModule, ROField), 2.5f);
+            // The window edit mirrors this one by itself, so it says the fixture is
+            // sound rather than that the mod did anything.
+            context.Check("fixture: the window edit reached the mirrored lower booster",
+                          PartFields.Get(rig.Mirror[0], ROModule, ROField), 2.5f);
+
+            // This one is the point. Two hops from anything the player touched: this
+            // mod had to propagate up the near side, and that write had to carry to
+            // the counterpart of the part it landed on.
+            context.Check("upper booster on the mirrored side follows",
+                          PartFields.Get(rig.Mirror[1], ROModule, ROField), 2.5f);
+            context.Check("core untouched",
+                          PartFields.Get(rig.Core[0], ROModule, ROField), 4f);
+        }
+
+        /// <summary>
+        /// Two mismatched RO tanks, left alone, must stay mismatched.
+        /// </summary>
+        /// <remarks>
+        /// The same guard the ProceduralParts stack has, against a mod that tidies up
+        /// a craft nobody is touching and then reacts to its own result. Lengths are
+        /// checked as well as diameters because ROLib drives length from diameter, so
+        /// a loop would show there first.
+        ///
+        /// Worth knowing what this does NOT establish. It was written expecting
+        /// ROLib's ValidateLength to write currentLength while the stack sat idle, and
+        /// no such write ever appears. That is not because the linkage is imaginary:
+        /// rolib_mouse_click_links_length_to_diameter clicks the real control and
+        /// watches the length go 1.0 to 1.5 as the diameter goes 2 to 3. ROLib assigns
+        /// that field directly rather than through BaseField, the way B9 does, so it
+        /// is invisible to the general hook. Measured there, not assumed here.
+        /// </remarks>
+        private static IEnumerator ROLibIdleStackIsLeftAlone(TestContext context)
+        {
+            string tank = ROTankPart();
+            if (tank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var stack = new Stack();
+            yield return BuildStack(context, stack, tank, ROModule, ROField, 2f, 3f);
+            if (!stack.Ok) yield break;
+
+            float lowerLength = PartFields.Get(stack.Parts[0], ROModule, "currentLength");
+            float upperLength = PartFields.Get(stack.Parts[1], ROModule, "currentLength");
+
+            yield return context.Say("Doing nothing at all for ten frames.",
+                                     "Both tanks should still read the sizes they were built at, and their "
+                                     + "lengths should not have crept either.");
+
+            yield return context.Frames(10);
+
+            context.Check("lower tank unchanged",
+                          PartFields.Get(stack.Parts[0], ROModule, ROField), 2f);
+            context.Check("upper tank unchanged",
+                          PartFields.Get(stack.Parts[1], ROModule, ROField), 3f);
+            context.Check("lower tank length unchanged",
+                          PartFields.Get(stack.Parts[0], ROModule, "currentLength"), lowerLength);
+            context.Check("upper tank length unchanged",
+                          PartFields.Get(stack.Parts[1], ROModule, "currentLength"), upperLength);
+        }
+
+        /// <summary>
+        /// Type into each kind of ProceduralParts dimension in turn.
+        /// </summary>
+        /// <remarks>
+        /// The shapes differ in how many numbers describe them - a cylinder has one
+        /// diameter, a cone has two - and those are separate fields reached through
+        /// separate boxes. Typing into one says nothing about the other, so both are
+        /// walked here.
+        ///
+        /// Length is included even though this mod does not propagate it. A dimension
+        /// nobody catalogued is exactly where an unwanted side effect would go
+        /// unnoticed, and typing it is the cheapest way to say that setting it does
+        /// what it says and nothing else.
+        /// </remarks>
+        private static IEnumerator PPTypedDimensionsReachThePart(TestContext context)
+        {
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            Part tank = EditorBuilder.Spawn(PPTank);
+            if (tank == null) { context.Skip("no ProceduralParts tank installed"); yield break; }
+            yield return context.Frames(6);
+            EditorBuilder.SetRoot(tank);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            if (!PartActionWindow.Open(tank, out string why)) { context.Skip(why); yield break; }
+            yield return context.Frames(30);
+
+            var step = new TypedOutcome();
+            yield return SetTypedEntry(context, tank, on: true, step);
+            if (!step.Ok) { context.Skip(step.Why); PartActionWindow.CloseAll(); yield break; }
+
+            // --- a cylinder: one diameter, and a length -------------------------
+            yield return context.Say("Typing the cylinder's diameter, then its length.",
+                                     "Two boxes in the same window, one after the other.");
+
+            yield return TypeInto(context, tank, PPShapeModule, "diameter", "1.75", step);
+            if (!step.Ok) { context.Result.Fail(step.Why); PartActionWindow.CloseAll(); yield break; }
+            context.Check("typed diameter reached the cylinder",
+                          PartFields.Get(tank, PPShapeModule, "diameter"), 1.75f);
+
+            yield return TypeInto(context, tank, PPShapeModule, "length", "3.25", step);
+            if (!step.Ok) { context.Result.Fail(step.Why); PartActionWindow.CloseAll(); yield break; }
+            context.Check("typed length reached the cylinder",
+                          PartFields.Get(tank, PPShapeModule, "length"), 3.25f);
+            context.Check("and typing the length left the diameter alone",
+                          PartFields.Get(tank, PPShapeModule, "diameter"), 1.75f);
+
+            // --- the same part as a cone: two ends, two fields -------------------
+            yield return context.Say("Switching the part to a cone and typing both ends.",
+                                     "A cone is described by two diameters, which are two separate "
+                                     + "fields and two separate boxes.");
+
+            if (!PartFields.SetProceduralPartsShape(tank, "Cone"))
+            {
+                context.Result.Fail("could not switch the part to a cone");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+            yield return context.Settled();
+
+            // The window is rebuilt around the new shape's fields, so it has to be
+            // reopened before anything can be typed into it.
+            PartActionWindow.CloseAll();
+            yield return context.Frames(10);
+            if (!PartActionWindow.Open(tank, out why)) { context.Skip(why); yield break; }
+            yield return context.Frames(30);
+
+            const string cone = "ProceduralShapeCone";
+            yield return TypeInto(context, tank, cone, "topDiameter", "0.9", step);
+            if (!step.Ok) { context.Result.Fail(step.Why); PartActionWindow.CloseAll(); yield break; }
+            context.Check("typed top diameter reached the cone",
+                          PartFields.Get(tank, cone, "topDiameter"), 0.9f);
+
+            yield return TypeInto(context, tank, cone, "bottomDiameter", "2.4", step);
+            if (!step.Ok) { context.Result.Fail(step.Why); PartActionWindow.CloseAll(); yield break; }
+            context.Check("typed bottom diameter reached the cone",
+                          PartFields.Get(tank, cone, "bottomDiameter"), 2.4f);
+            context.Check("and the far end kept what it was given",
+                          PartFields.Get(tank, cone, "topDiameter"), 0.9f);
+
+            yield return SetTypedEntry(context, tank, on: false, step);
+            PartActionWindow.CloseAll();
+            yield return context.Frames(4);
+            context.CheckTrue("typed entry was switched back off afterwards",
+                              !GameSettings.PAW_NUMERIC_SLIDERS);
+        }
+
+        /// <summary>How a typed-entry step went.</summary>
+        private class TypedOutcome
+        {
+            /// <summary>True when the value was typed and read back.</summary>
+            public bool Ok;
+
+            /// <summary>Why it could not be, when it could not.</summary>
+            public string Why;
+        }
+
+        /// <summary>
+        /// Turn the window's "#" mode on by clicking it, as a player does.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="part">The part whose window is open.</param>
+        /// <param name="on">Which way to leave it.</param>
+        /// <param name="outcome">Whether the toggle ended up as asked.</param>
+        private static IEnumerator SetTypedEntry(TestContext context, Part part, bool on,
+                                                 TypedOutcome outcome)
+        {
+            outcome.Ok = false;
+            if (GameSettings.PAW_NUMERIC_SLIDERS == on) { outcome.Ok = true; yield break; }
+
+            RectTransform toggle = PartActionWindow.NumericToggle(part);
+            if (toggle == null) { outcome.Why = "the window has no numeric toggle"; yield break; }
+            if (!SyntheticInput.ScreenPointOfUI(toggle, out int tx, out int ty))
+            {
+                outcome.Why = "the numeric toggle is not on screen";
+                yield break;
+            }
+
+            var aim = new PointOutcome();
+            yield return PointAt(context, tx, ty, aim);
+            if (!aim.Ok) { outcome.Why = $"the pointer did not reach the toggle: {aim.Detail}"; yield break; }
+
+            SyntheticInput.Click();
+            for (int settle = 0; settle < 40 && GameSettings.PAW_NUMERIC_SLIDERS != on; settle++)
+                yield return context.Frames(5);
+
+            outcome.Ok = GameSettings.PAW_NUMERIC_SLIDERS == on;
+            if (!outcome.Ok) outcome.Why = "the numeric toggle did not change state";
+        }
+
+        /// <summary>
+        /// Type a value into one field's box in an open part action window.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="part">The part whose window is open.</param>
+        /// <param name="moduleName">The module the field belongs to.</param>
+        /// <param name="fieldName">The field to type into.</param>
+        /// <param name="value">What to type.</param>
+        /// <param name="outcome">Whether it was typed.</param>
+        /// <remarks>
+        /// Waits for the box rather than pausing a fixed time. The container is
+        /// switched on in response to an event, and a fixed pause has already produced
+        /// one run that reported "this install has no numeric input" when it plainly
+        /// did - a wrong reason stated confidently, which is worse than a failure.
+        /// </remarks>
+        private static IEnumerator TypeInto(TestContext context, Part part, string moduleName,
+                                            string fieldName, string value, TypedOutcome outcome)
+        {
+            outcome.Ok = false;
+
+            RectTransform box = null;
+            for (int settle = 0; settle < 60 && box == null; settle++)
+            {
+                box = PartActionWindow.TypedEntryFor(part, moduleName, fieldName);
+                if (box == null) yield return context.Frames(5);
+            }
+            if (box == null) { outcome.Why = $"no text box appeared for {fieldName}"; yield break; }
+
+            if (!SyntheticInput.ScreenPointOfUI(box, out int x, out int y))
+            {
+                outcome.Why = $"the text box for {fieldName} is not on screen";
+                yield break;
+            }
+
+            var aim = new PointOutcome();
+            yield return PointAt(context, x, y, aim);
+            if (!aim.Ok)
+            {
+                outcome.Why = $"the pointer did not reach {fieldName}'s box: {aim.Detail}";
+                yield break;
+            }
+
+            Harness.Log($"TYPED aiming {fieldName} at ({x}, {y}) over " +
+                        $"{PartActionWindow.WhatIsUnder(x, y)}");
+            SyntheticInput.Click();
+            yield return context.Frames(4);
+            SyntheticInput.Press("ctrl+a");
+            yield return context.Frames(2);
+            SyntheticInput.TypeText(value);
+            yield return context.Frames(4);
+            SyntheticInput.Press("Return");
+
+            // As in B9's window: wait for the number to arrive rather than for the
+            // ship to go quiet. Where the value cannot be parsed there is nothing to
+            // wait for, so fall back to a settle.
+            if (float.TryParse(value, out float wanted))
+            {
+                for (int wait = 0; wait < 20; wait++)
+                {
+                    if (Mathf.Abs(PartFields.Get(part, moduleName, fieldName) - wanted) <= 0.02f) break;
+                    yield return context.Frames(2);
+                }
+            }
+            else
+            {
+                yield return context.Settled();
+            }
+            outcome.Ok = true;
+        }
+
+        /// <summary>
+        /// Type an exact diameter into an RO tank's window and watch it arrive.
+        /// </summary>
+        /// <remarks>
+        /// The other input scenarios all click something. This one is the only place a
+        /// value arrives as characters from a keyboard, which is a different path
+        /// through KSP entirely: the text box validates what is typed, parses it on
+        /// Enter, and pushes it through the field the same way the buttons do. A mod
+        /// that reacts to slider clicks but not to typed entry would pass everything
+        /// else here.
+        ///
+        /// It also lets the value be CHOSEN rather than accumulated. Clicking an
+        /// increment gets you wherever the control's step lands; typing 3.7 asks for
+        /// 3.7, so this can check a number instead of a relationship.
+        /// </remarks>
+        private static IEnumerator ROLibTypedDiameterReachesTheTank(TestContext context)
+        {
+            string tankName = ROTankPart();
+            if (tankName == null) { context.Skip("no ROTanks part installed"); yield break; }
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            Part tank = EditorBuilder.Spawn(tankName);
+            if (tank == null) { context.Skip("could not spawn an RO tank"); yield break; }
+            yield return context.Frames(6);
+            PartFields.Set(tank, ROModule, ROField, 2f, WriteMode.PartActionWindow);
+            EditorBuilder.SetRoot(tank);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float lengthBefore = PartFields.Get(tank, ROModule, "currentLength");
+
+            if (!PartActionWindow.Open(tank, out string why)) { context.Skip(why); yield break; }
+            yield return context.Frames(30);
+
+            // --- turn typed entry on by clicking "#" ------------------------------
+            RectTransform toggle = PartActionWindow.NumericToggle(tank);
+            if (toggle == null)
+            {
+                context.Result.Fail("the window has no numeric toggle to click");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+            if (!SyntheticInput.ScreenPointOfUI(toggle, out int tx, out int ty))
+            {
+                context.Skip("the numeric toggle is not on screen");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            yield return context.Say("Clicking the window's \"#\" button.",
+                                     "It swaps the sliders for text boxes you can type into.");
+
+            var onToggle = new PointOutcome();
+            yield return PointAt(context, tx, ty, onToggle);
+            if (!onToggle.Ok)
+            {
+                context.Skip($"the pointer did not reach the toggle: {onToggle.Detail}");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+            Harness.Log($"ROTYPE toggle at ({tx}, {ty}) over {PartActionWindow.WhatIsUnder(tx, ty)}");
+            Harness.Log($"ROTYPE before click: numeric={GameSettings.PAW_NUMERIC_SLIDERS}, " +
+                        $"{PartActionWindow.DescribeItem(tank, ROModule, ROField)}");
+            SyntheticInput.Click();
+            yield return context.Frames(30);
+            Harness.Log($"ROTYPE after click: numeric={GameSettings.PAW_NUMERIC_SLIDERS}, " +
+                        $"{PartActionWindow.DescribeItem(tank, ROModule, ROField)}");
+
+            // Waited for rather than assumed. The container is switched on in response
+            // to an event, and a fixed pause got the box on one run and missed it on
+            // the one before - which reported as "this install has no numeric input"
+            // and would have been believed.
+            RectTransform box = null;
+            for (int settle = 0; settle < 60 && box == null; settle++)
+            {
+                box = PartActionWindow.TypedEntryFor(tank, ROModule, ROField);
+                if (box == null) yield return context.Frames(5);
+            }
+            if (box == null)
+            {
+                // Worth telling apart: no KSPCommunityFixes means no text box on a
+                // float edit at all, which is a missing feature rather than a fault.
+                context.Skip("no text box appeared - this install may not have "
+                             + "KSPCommunityFixes' UIFloatEditNumericInput");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            // --- click into it and type -------------------------------------------
+            if (!SyntheticInput.ScreenPointOfUI(box, out int ix, out int iy))
+            {
+                context.Skip("the text box is not on screen");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            yield return context.Say("Typing 3.7 into the diameter box and pressing Enter.",
+                                     "An exact number, chosen rather than stepped to. The tank should "
+                                     + "become 3.7 m across, and should lengthen with it.");
+
+            var onBox = new PointOutcome();
+            yield return PointAt(context, ix, iy, onBox);
+            if (!onBox.Ok)
+            {
+                context.Skip($"the pointer did not reach the text box: {onBox.Detail}");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+            Harness.Log($"ROTYPE box at ({ix}, {iy}) over {PartActionWindow.WhatIsUnder(ix, iy)}");
+
+            SyntheticInput.Click();
+            yield return context.Frames(10);
+            SyntheticInput.Press("ctrl+a");          // over whatever it already holds
+            yield return context.Frames(4);
+            SyntheticInput.TypeText("3.7");
+            yield return context.Frames(10);
+            SyntheticInput.Press("Return");          // onEndEdit is what parses it
+            yield return context.Settled();
+
+            float diameterAfter = PartFields.Get(tank, ROModule, ROField);
+            float lengthAfter = PartFields.Get(tank, ROModule, "currentLength");
+            string sawDiameter = ForeignWriteSeen(tank, ROField);
+            string sawLength = ForeignWriteSeen(tank, "currentLength");
+            Harness.Log($"ROTYPE after: diameter {diameterAfter:F4} length " +
+                        $"{lengthBefore:F4} -> {lengthAfter:F4}; hook saw {ROField} = " +
+                        $"{sawDiameter ?? "nothing"}, currentLength = {sawLength ?? "nothing"}");
+
+            context.Check("the typed diameter reached the tank", diameterAfter, 3.7f);
+            context.CheckTrue($"the length followed it ({lengthBefore:F4} -> {lengthAfter:F4})",
+                              Mathf.Abs(lengthAfter - lengthBefore) > 0.01f);
+            context.CheckTrue("the hook saw the typed write to the diameter", sawDiameter != null);
+
+            // The same coverage gap the clicked scenario measures, reached by a
+            // different route: however the diameter arrives, ROLib's answering write
+            // to the length goes around KSP's field API.
+            context.CheckTrue("ROLib's length write bypasses the field API here too "
+                              + $"(hook saw: {sawLength ?? "nothing"})",
+                              sawLength == null);
+
+            // --- and its other dimension, in the same window ----------------------
+            yield return context.Say("Now typing 2.6 into the length box.",
+                                     "ROLib's other dimension. It has a floor that rises with the "
+                                     + "diameter, so a length typed below that floor is refused by "
+                                     + "ROLib rather than by anything here - which is why this asks for "
+                                     + "a length comfortably above it.");
+
+            var lengthStep = new TypedOutcome();
+            yield return TypeInto(context, tank, ROModule, "currentLength", "2.6", lengthStep);
+            if (!lengthStep.Ok)
+            {
+                context.Result.Fail(lengthStep.Why);
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            context.Check("the typed length reached the tank",
+                          PartFields.Get(tank, ROModule, "currentLength"), 2.6f);
+            context.Check("and typing the length left the diameter alone",
+                          PartFields.Get(tank, ROModule, ROField), 3.7f);
+
+            // Left on, the "#" state is written to settings.cfg and inherited by every
+            // later scenario AND by the next run of the suite.
+            yield return PointAt(context, tx, ty, onToggle);
+            if (onToggle.Ok) SyntheticInput.Click();
+            yield return context.Frames(10);
+            PartActionWindow.CloseAll();
+            yield return context.Frames(4);
+
+            // Checked, not hoped for. This setting is written to settings.cfg, so a
+            // leak here outlives the scenario, the suite and the run.
+            context.CheckTrue("typed entry was switched back off afterwards",
+                              !GameSettings.PAW_NUMERIC_SLIDERS);
+        }
+
+        /// <summary>
+        /// Widen an RO tank with the mouse, through its real window, and see what
+        /// ROLib does to its length and by what route.
+        /// </summary>
+        /// <remarks>
+        /// One part on its own, deliberately. With a neighbour there would be two
+        /// candidates for anything that moves - ROLib's own rules and this mod's
+        /// propagation - and the question here is precisely which of the two is
+        /// acting. A lone tank has nothing to propagate to, so anything that changes
+        /// besides the field that was clicked is ROLib's doing and nobody else's.
+        ///
+        /// Our own scenario text has claimed for a long time that these tanks lengthen
+        /// when they widen, and no length write has ever appeared through the field
+        /// hook - so either the claim is wrong or ROLib assigns that field directly,
+        /// the way B9 does, and length changes are outside the general hook's reach.
+        /// This distinguishes the two by making the change for real and then asking
+        /// the hook what it saw.
+        /// </remarks>
+        private static IEnumerator ROLibMouseClickLinksLengthToDiameter(TestContext context)
+        {
+            string tankName = ROTankPart();
+            if (tankName == null) { context.Skip("no ROTanks part installed"); yield break; }
+            if (!SyntheticInput.Available) { context.Skip(SyntheticInput.Unavailable); yield break; }
+
+            Part tank = EditorBuilder.Spawn(tankName);
+            if (tank == null) { context.Skip("could not spawn an RO tank"); yield break; }
+            yield return context.Frames(6);
+            PartFields.Set(tank, ROModule, ROField, 2f, WriteMode.PartActionWindow);
+            EditorBuilder.SetRoot(tank);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            float diameterBefore = PartFields.Get(tank, ROModule, ROField);
+            float lengthBefore = PartFields.Get(tank, ROModule, "currentLength");
+            Harness.Log($"ROPAW before: diameter {diameterBefore:F4} length {lengthBefore:F4}");
+
+            // --- open the window by right-clicking the part, as a player does -----
+            yield return context.Say("Right-clicking the RO tank to open its window.",
+                                     "Real pointer, real button, real window.");
+
+            // The camera is still moving after PresentShip, and a point taken while it
+            // moves is stale before the pointer gets there. Wait for the projection to
+            // stop changing rather than for a fixed number of frames.
+            Vector3 probe = EditorBuilder.BodyCentreOf(tank);
+            var lastSeen = new Vector2(float.NaN, float.NaN);
+            for (int settle = 0; settle < 300; settle++)
+            {
+                if (SyntheticInput.ScreenPoint(probe, out int sx, out int sy))
+                {
+                    var now = new Vector2(sx, sy);
+                    if ((now - lastSeen).sqrMagnitude <= 1f) break;
+                    lastSeen = now;
+                }
+                yield return context.Frames(5);
+            }
+
+            if (!SyntheticInput.ScreenPoint(probe, out int px, out int py))
+            {
+                context.Skip("the tank is not on screen to click");
+                yield break;
+            }
+
+            var aim = new PointOutcome();
+            yield return PointAt(context, px, py, aim);
+            if (!aim.Ok)
+            {
+                context.Skip($"the pointer did not land where it was aimed: {aim.Detail}");
+                yield break;
+            }
+
+            SyntheticInput.RightClick();
+            yield return context.Frames(30);
+
+            UIPartActionFloatEdit edit = PartActionWindow.FloatEditFor(tank, ROModule, ROField);
+            if (edit == null)
+            {
+                // The right-click may simply not have registered. Falling back to
+                // spawning the window keeps the scenario about ROLib's linkage rather
+                // than about pointer reliability, and says in the log which happened.
+                Harness.Log("ROPAW right-click did not open a usable window; spawning it directly");
+                if (!PartActionWindow.Open(tank, out string why)) { context.Skip(why); yield break; }
+                yield return context.Frames(30);
+                edit = PartActionWindow.FloatEditFor(tank, ROModule, ROField);
+            }
+            if (edit == null)
+            {
+                context.Result.Fail("no diameter control appeared in the RO tank's window");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            // --- click the increment button itself --------------------------------
+            if (!SyntheticInput.ScreenPointOfUI(edit.incLarge.transform as RectTransform,
+                                                out int bx, out int by))
+            {
+                context.Result.Fail("the diameter control's increment button is not on screen");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            yield return context.Say("Clicking the diameter's increment button.",
+                                     "Watch the tank get LONGER as well as wider. Nothing is stacked on "
+                                     + "it and nothing propagates anywhere, so whatever happens to its "
+                                     + "length is ROLib's own rule.");
+
+            Harness.Log($"ROPAW control: {PartActionWindow.Describe(edit)}");
+            Harness.Log($"ROPAW buttons: {PartActionWindow.DescribeButtons(edit)}");
+            Harness.Log($"ROPAW aiming at ({bx}, {by}) of {Screen.width}x{Screen.height}; " +
+                        $"under it: {PartActionWindow.WhatIsUnder(bx, by)}");
+
+            var onButton = new PointOutcome();
+            yield return PointAt(context, bx, by, onButton);
+            if (!onButton.Ok)
+            {
+                context.Skip($"the pointer did not reach the button: {onButton.Detail}");
+                PartActionWindow.CloseAll();
+                yield break;
+            }
+
+            SyntheticInput.Click();
+            yield return context.Settled();
+
+            float diameterAfter = PartFields.Get(tank, ROModule, ROField);
+            float lengthAfter = PartFields.Get(tank, ROModule, "currentLength");
+            Harness.Log($"ROPAW after: diameter {diameterAfter:F4} length {lengthAfter:F4}");
+
+            string sawDiameter = ForeignWriteSeen(tank, ROField);
+            string sawLength = ForeignWriteSeen(tank, "currentLength");
+            Harness.Log($"ROPAW hook saw: {ROField} = {sawDiameter ?? "nothing"}; " +
+                        $"currentLength = {sawLength ?? "nothing"}");
+
+            context.CheckTrue("the click widened the tank", diameterAfter > diameterBefore + 0.01f);
+
+            // The linkage itself. If this fails, the claim repeated in several
+            // scenario descriptions is simply wrong and they need correcting.
+            context.CheckTrue($"ROLib changed the length with the diameter "
+                              + $"({lengthBefore:F4} -> {lengthAfter:F4})",
+                              Mathf.Abs(lengthAfter - lengthBefore) > 0.01f);
+
+            // The mechanism, now measured rather than guessed at.
+            //
+            // The diameter went through KSP's own window code, so the hook must have
+            // seen it; if it had not, the hook would be broken rather than ROLib being
+            // unusual, and every other conclusion drawn from it would be suspect.
+            context.CheckTrue("the hook saw the window's write to the diameter",
+                              sawDiameter != null);
+
+            // The length is the interesting half. It demonstrably changed, and the
+            // hook on KSP's field API did NOT see it - so ROLib assigns that field
+            // directly, the way B9 does, and length changes are outside the reach of
+            // the general hook. That is asserted rather than merely logged because it
+            // is a real gap in coverage: should this ever start failing, either ROLib
+            // has started using the field API or somebody has widened the hook, and
+            // both are things anyone relying on it needs to be told about.
+            context.CheckTrue("ROLib's length write bypasses the field API, as B9's do "
+                              + $"(hook saw: {sawLength ?? "nothing"})",
+                              sawLength == null);
+
+            PartActionWindow.CloseAll();
+            yield return context.Frames(4);
+        }
+
+        /// <summary>
+        /// What DimensionSync's foreign-write hook last recorded for a field, or null.
+        /// </summary>
+        /// <param name="part">The part to ask about.</param>
+        /// <param name="field">The field's name.</param>
+        /// <remarks>
+        /// By reflection because the tests are a separate plugin and do not link
+        /// against the mod. A missing type or method reads as "saw nothing", which is
+        /// right: on a build without the hook there is nothing to have seen.
+        /// </remarks>
+        private static string ForeignWriteSeen(Part part, string field)
+        {
+            System.Type type = null;
+            foreach (AssemblyLoader.LoadedAssembly loaded in AssemblyLoader.loadedAssemblies)
+            {
+                type = loaded.assembly?.GetType("DimensionSync.ForeignWrites", false);
+                if (type != null) break;
+            }
+
+            System.Reflection.MethodInfo method = type?.GetMethod(
+                "LastWriteDescription",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            return method?.Invoke(null, new object[] { part, field }) as string;
+        }
+
+        /// <summary>
+        /// An all-RO-Tanks version of the booster rig: a core of two tanks with a
+        /// two-tank booster on each side, the sides linked as symmetry counterparts.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="rig">Filled in with the core and both booster stacks.</param>
+        private static IEnumerator BuildROBoosterRig(TestContext context, BoosterRig rig)
+        {
+            string tank = ROTankPart();
+            if (tank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var core = new Stack();
+            yield return BuildStack(context, core, tank, ROModule, ROField, 4f, 4f);
+            if (!core.Ok) yield break;
+            rig.Core = core.Parts;
+
+            var built = new Part[2][];
+            for (int side = 0; side < 2; side++)
+            {
+                var boosters = new Part[2];
+                for (int i = 0; i < boosters.Length; i++)
+                {
+                    boosters[i] = EditorBuilder.Spawn(tank);
+                    if (boosters[i] == null)
+                    {
+                        context.Skip("could not spawn an RO booster");
+                        yield break;
+                    }
+                }
+                yield return context.Frames(6);
+
+                foreach (Part part in boosters)
+                    PartFields.Set(part, ROModule, ROField, 1.5f, WriteMode.PartActionWindow);
+                yield return context.Frames(2);
+
+                EditorBuilder.PresentShip();
+                Vector3 outward = EditorBuilder.DirectionAcrossCamera(rig.Core[0]) * (side == 0 ? 1f : -1f);
+                if (!EditorBuilder.SurfaceAttach(rig.Core[0], boosters[0],
+                                                 outward * EditorBuilder.SurfaceRadius(rig.Core[0]))
+                    || !EditorBuilder.StackOnTop(boosters[0], boosters[1]))
+                {
+                    context.Result.Error("could not attach the RO booster stack");
+                    yield break;
+                }
+                built[side] = boosters;
+            }
+
+            rig.Booster = built[0];
+            rig.Mirror = built[1];
+            for (int i = 0; i < rig.Booster.Length; i++)
+                EditorBuilder.LinkSymmetry(rig.Booster[i], rig.Mirror[i]);
+
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+            yield return context.Say("Fixture built.",
+                                     "A 4 m RO-Tanks core of two tanks, with a booster stack of two 1.5 m "
+                                     + "RO tanks on each side, the two sides linked as mirror symmetry "
+                                     + "counterparts.");
+            rig.Ok = true;
         }
 
         /// <summary>

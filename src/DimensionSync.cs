@@ -176,6 +176,7 @@ namespace DimensionSync
         /// <summary>Subscribe to the editor events that can invalidate the tracked part list.</summary>
         private void Start()
         {
+            ForeignWrites.InstallSceneHooks();
             GameEvents.onEditorPartEvent.Add(OnEditorPartEvent);
             GameEvents.onEditorLoad.Add(OnEditorLoad);
             GameEvents.onEditorRestart.Add(MarkDirty);
@@ -742,6 +743,24 @@ WingConformance.NotePlayerPlacements(_nodes, midChange: true);
         /// nothing at all when the two match, so passing the new value makes the
         /// callback a no-op and the mesh never rebuilds.
         /// </remarks>
+        /// <summary>Write a field, without <see cref="ForeignWrites"/> calling it somebody else's.</summary>
+        /// <param name="field">The field to write.</param>
+        /// <param name="value">The value to write, already boxed as the field's type.</param>
+        /// <param name="host">The module holding the field.</param>
+        /// <remarks>
+        /// The flag is held across this one call and no further. Wrapping the whole
+        /// of a write - the symmetry pass, the callbacks - would also swallow what
+        /// OTHER mods do in reaction to us, and that traffic is the interesting kind:
+        /// ProceduralParts writing its counterparts from inside our own
+        /// onFieldChanged is somebody else's write, and we want to be told.
+        /// </remarks>
+        private static void WriteWithoutHearingIt(BaseField field, object value, object host)
+        {
+            ForeignWrites.Ours = true;
+            try { field.SetValue(value, host); }
+            finally { ForeignWrites.Ours = false; }
+        }
+
         internal static void SetFieldLikeUI(Part part, PartModule module, BaseField field, object newValue,
                                             WriteOrigin origin = WriteOrigin.Rule)
         {
@@ -763,7 +782,7 @@ WingConformance.NotePlayerPlacements(_nodes, midChange: true);
 
             if (!changed) return;
 
-            field.SetValue(newValue, field.host);
+            WriteWithoutHearingIt(field, newValue, field.host);
 
             if (control != null)
             {
@@ -834,7 +853,7 @@ WingConformance.NotePlayerPlacements(_nodes, midChange: true);
                 // player edit on the mirrored half of every pair.
                 NoteOwnWrite(counterpart, counterpartField, newValue);
                 if (origin == WriteOrigin.Channel) NoteChannelWrite(counterpart, counterpartField, newValue);
-                counterpartField.SetValue(newValue, counterpartField.host);
+                WriteWithoutHearingIt(counterpartField, newValue, counterpartField.host);
 
                 // Stock passes the *primary* part's field and the new value here,
                 // which reads oddly next to onFieldChanged but is what mods expect.
