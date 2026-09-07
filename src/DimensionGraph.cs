@@ -89,6 +89,51 @@ namespace DimensionSync
     }
 
     /// <summary>What to do with a neighbour that was near, but not exactly, the same size.</summary>
+    /// <summary>
+    /// How the two surfaces of a hollow arrangement follow one another: a part's own
+    /// inner and outer diameters, or the clearance between a part and one nested
+    /// inside it.
+    /// </summary>
+    internal enum HollowMode
+    {
+        /// <summary>
+        /// The bore never moves. A change that cannot fit around it stops short.
+        /// </summary>
+        /// <remarks>
+        /// The default, because it is the only mode that never changes a number the
+        /// player did not ask about. A stack change refused by the bore leaves the
+        /// craft visibly mismatched - a 1.00 m tank sitting on a 2.01 m one - which is
+        /// information, not damage: something the player asked for did not fit, and
+        /// they can see exactly where.
+        /// </remarks>
+        HardIndependent = 0,
+
+        /// <summary>
+        /// The bore holds until the outside needs the room, and then gives up exactly
+        /// as much as it must.
+        /// </summary>
+        /// <remarks>
+        /// Same promise as hard for every change that fits. The difference shows only
+        /// where hard would stop short: the bore drops to the outer diameter less the
+        /// least wall the part allows, so the outside can go where it was sent and the
+        /// stack matches.
+        /// </remarks>
+        SoftIndependent = 1,
+
+        /// <summary>Hold the ratio: a bore half the outer diameter stays half of it.</summary>
+        Proportional = 2,
+
+        /// <summary>
+        /// Hold the difference: the wall, or the clearance, stays the thickness it was.
+        /// </summary>
+        /// <remarks>
+        /// Until the outer runs out of room. A shrinking outer diameter drives the
+        /// inner one down to its own minimum and then the wall has to give, because
+        /// the alternative is an inner surface outside the outer one.
+        /// </remarks>
+        Constant = 3,
+    }
+
     internal enum MarginMode
     {
         /// <summary>Bring it to the new size exactly, closing the gap.</summary>

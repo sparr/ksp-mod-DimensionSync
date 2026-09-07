@@ -115,7 +115,16 @@ namespace DimensionSync
         /// </returns>
         public float SetValue(float value)
         {
-            float wanted = ClampToControl(_descriptor.ToFieldUnits(value));
+            float asked = _descriptor.ToFieldUnits(value);
+
+            // Before the clamp, because the clamp is where the information is lost. A
+            // hollow part's bore sets the floor under its own outer diameter, and soft
+            // coupling is allowed to lower that floor rather than let the write stop
+            // short. Does nothing in any other mode, or for any field that is not an
+            // outer diameter with a bore behind it.
+            HollowCoupling.MakeRoomFor(this, asked);
+
+            float wanted = ClampToControl(asked);
             object boxed = Box(wanted);
             if (boxed == null) return Value;
 

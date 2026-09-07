@@ -44,6 +44,17 @@ namespace DimensionSync
         public static MarginMode Margin = MarginMode.None;
 
         /// <summary>
+        /// How a hollow part's two diameters, and the clearance between two nested
+        /// parts, follow one another.
+        /// </summary>
+        /// <remarks>
+        /// One setting for both on purpose: a wall and a clearance are the same
+        /// question asked twice - how much room is there between an inner surface and
+        /// an outer one, and what should happen to it when either moves.
+        /// </remarks>
+        public static HollowMode Hollow = HollowMode.HardIndependent;
+
+        /// <summary>
         /// How far a control surface may sit from its wing's edge and still count as
         /// belonging to it, as a fraction of the surface's own chord.
         /// </summary>
@@ -141,6 +152,8 @@ namespace DimensionSync
                 if (bool.TryParse(node.GetValue("mirrorToSymmetryCounterparts") ?? "", out bool mirror))
                     MirrorToSymmetryCounterparts = mirror;
                 if (TryParseMargin(node.GetValue("marginMode"), out MarginMode margin)) Margin = margin;
+                if (TryParseHollow(node.GetValue("hollowCoupling"), out HollowMode hollow))
+                    Hollow = hollow;
             }
 
             LoadPlayerChoices();
@@ -148,6 +161,24 @@ namespace DimensionSync
 
         /// <summary>Turn a config spelling of a margin mode into the enum.</summary>
         /// <returns>False for anything unrecognised, leaving the caller's value alone.</returns>
+        /// <summary>Read a hollow coupling mode from config.</summary>
+        /// <param name="text">The configured word, or null.</param>
+        /// <param name="mode">The mode it names.</param>
+        private static bool TryParseHollow(string text, out HollowMode mode)
+        {
+            switch ((text ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                // "independent" still parses, as the name this had before it was
+                // split, and means the mode that behaves as it always did.
+                case "hard":
+                case "independent": mode = HollowMode.HardIndependent; return true;
+                case "soft": mode = HollowMode.SoftIndependent; return true;
+                case "proportional": mode = HollowMode.Proportional; return true;
+                case "constant": mode = HollowMode.Constant; return true;
+                default: mode = HollowMode.HardIndependent; return false;
+            }
+        }
+
         private static bool TryParseMargin(string text, out MarginMode mode)
         {
             switch ((text ?? "").Trim().ToLowerInvariant())

@@ -583,6 +583,15 @@ WingConformance.NotePlayerPlacements(_nodes, midChange: true);
             WingConformance.NoteStraightEdges(_nodes, _valuesBeforeChange);
             try
             {
+                // Before the walks: a hollow part's two diameters describe one wall
+                // from opposite sides, and moving one may be meant to move the other.
+                // Whatever that produces is appended as an ordinary change, so it
+                // walks out to the neighbours exactly as a player's edit would -
+                // otherwise a part sized to the bore would follow the bore when the
+                // player dragged it and not when the wall carried it, which is a
+                // distinction nobody outside this file can see a reason for.
+                HollowCoupling.Couple(_nodes, _changes);
+
                 // Each changed field starts its own walk. Two fields can change in
                 // the same frame - a symmetry pair, or a hollow part's bore and
                 // outside together - and their runs are independent.
