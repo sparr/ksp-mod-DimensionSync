@@ -351,12 +351,44 @@ namespace DimensionSync.GameTests
         /// Refresh rather than Save, so a test run does not leave its last choice
         /// sitting in the player's settings file.
         /// </remarks>
+        /// <summary>
+        /// Choose how a hollow part's two diameters follow one another, for the
+        /// moment.
+        /// </summary>
+        /// <param name="mode">independent, proportional or constant.</param>
+        public static bool SetHollowMode(string mode)
+        {
+            // Config vocabulary in, enum member out. The two deliberately differ -
+            // "hard" and "soft" read better in a config file than HardIndependent -
+            // and a scenario should be able to name the mode the way the player does.
+            // Passing the config word straight to Enum.Parse silently failed for
+            // exactly the two modes whose names are not their config words, and the
+            // skip message blamed the setting for being absent.
+            switch (mode.Trim().ToLowerInvariant())
+            {
+                case "hard":
+                case "independent": mode = "HardIndependent"; break;
+                case "soft": mode = "SoftIndependent"; break;
+                case "proportional": mode = "Proportional"; break;
+                case "constant": mode = "Constant"; break;
+            }
+            return SetEnumSetting("Hollow", mode);
+        }
+
         public static bool SetMarginMode(string mode)
+        {
+            return SetEnumSetting("Margin", mode);
+        }
+
+        /// <summary>Set one of DimensionSync's enum settings by name.</summary>
+        /// <param name="field">The static field on DimensionSettings.</param>
+        /// <param name="mode">The value's name, matched without regard to case.</param>
+        private static bool SetEnumSetting(string field, string mode)
         {
             FindSettings();
             if (_settings == null) return false;
 
-            FieldInfo margin = _settings.GetField("Margin",
+            FieldInfo margin = _settings.GetField(field,
                 BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
             if (margin == null) return false;
 

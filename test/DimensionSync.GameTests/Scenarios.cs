@@ -140,6 +140,144 @@ namespace DimensionSync.GameTests
                 "The base case again, but against ROLib, whose field name and change handling "
                 + "are nothing like ProceduralParts'.");
 
+            yield return New("hollow_independent_leaves_the_bore_alone", HollowIndependentLeavesTheBore,
+                "A hollow tank widened with the coupling set to hard. The bore "
+                + "should not move: independent means neither diameter drags the "
+                + "other about, and the default has to be the mode that changes "
+                + "nothing the player did not ask about.");
+
+            yield return New("hollow_hard_holds_the_bore", HollowHardHoldsTheBore,
+                "A stack change that the bore refuses, under HARD coupling. The "
+                + "hollow tank follows only as far as the bore allows and the craft "
+                + "is left visibly mismatched, which is the point of the mode: "
+                + "nothing the player did not ask for gets moved.");
+
+            yield return New("hollow_soft_yields_the_bore", HollowSoftYieldsTheBore,
+                "The same craft and the same edit under SOFT coupling. The bore drops "
+                + "out of the way by exactly the least wall, so the outside follows "
+                + "the stack the whole way. The pair is the entire difference between "
+                + "the two modes.");
+
+            yield return New("hollow_proportional_keeps_the_bore_a_fraction", HollowProportionalKeepsTheFraction,
+                "Proportional coupling: a bore at half the outer diameter stays at "
+                + "half of it when the outside changes.");
+
+            yield return New("hollow_constant_keeps_the_wall", HollowConstantKeepsTheWall,
+                "Constant coupling: the wall keeps its thickness, so the bore moves "
+                + "by exactly what the outside moved.");
+
+            yield return New("hollow_stack_neighbour_matching_the_outside_follows",
+                HollowStackNeighbourMatchingTheOutsideFollows,
+                "A plain tank sized to a hollow tank's OUTER diameter, stacked under it. "
+                + "It should follow, because outer diameters are one channel however "
+                + "they are spelled - diameter, topDiameter, outerDiameter.");
+
+            yield return New("hollow_stack_rotank_matching_the_outside_follows",
+                HollowStackROTankMatchingTheOutsideFollows,
+                "The same across a mod boundary: an RO tank sized to a hollow "
+                + "ProceduralParts tank's outer diameter. ROLib has no bore of its "
+                + "own, so RO parts can only ever be the neighbour here.");
+
+            yield return New("hollow_stack_neighbour_matching_the_bore_follows",
+                HollowStackNeighbourMatchingTheBoreFollows,
+                "A tank sized to the BORE rather than the outside. A part built to fit "
+                + "a bore is as ordinary as one built to fit an outside, so the change "
+                + "crosses the joint. Value equality keeps it narrow: inside one part "
+                + "the bore and the outside are never equal, so neither can ever set "
+                + "the other.");
+
+            yield return New("hollow_nested_far_face_flush_follows",
+                HollowNestedFarFaceFlush,
+                "A tank slid down inside a hollow tank's bore until its far face is "
+                + "flush. There is a clearance, so the diameters never match and no "
+                + "channel can carry the change - it follows because the pair is "
+                + "recognised as nested, which is the thing being tested.");
+
+            yield return New("hollow_nested_near_face_flush_follows",
+                HollowNestedNearFaceFlush,
+                "The same nest slid until the OTHER pair of faces lines up. A rule "
+                + "that only looked at the face the two were joined by would fail to "
+                + "recognise this one, and the part would be left behind.");
+
+            yield return New("hollow_nested_without_flush_faces_is_left_alone",
+                HollowNestedWithoutFlushFaces,
+                "Inside the bore but lined up with nothing - the control. This one "
+                + "must NOT follow: if it does, coplanarity is not what the rule is "
+                + "really keying on, and everything the other four prove is worth "
+                + "less than it looks.");
+
+            yield return New("hollow_nested_flipped_about_the_joint", HollowNestedFlippedAboutTheJoint,
+                "The same nest with the part turned end for end about the joint. The "
+                + "touching face is unchanged; what changed is which of its ends now "
+                + "points down the bore. A rule keyed on which face was attached would "
+                + "get this one wrong and never be told.");
+
+            yield return New("hollow_nested_mirrored_pair_close_together",
+                HollowNestedMirroredPairCloseTogether,
+                "Two mirrored nests pushed until their hosts touch - as close as two "
+                + "solid parts go. Registered beside the RO mirrored pair for "
+                + "comparison. Built to explore whether a host can reach its "
+                + "counterpart's nested part; the answer appears to be that it cannot "
+                + "while the hosts do not intersect, since the gap between them is at "
+                + "least a diameter and no bore inside that diameter spans it.");
+
+            yield return New("hollow_nested_rotank_mirrored_pair", HollowNestedROTankMirrored,
+                "Two RO tanks nested in two hollow tanks as a mirrored pair. Nesting "
+                + "has to survive symmetry, and the counterparts have to stay in "
+                + "step with each other whatever the rule does.");
+
+            yield return New("hollow_cone_end_matching_the_outside_follows",
+                HollowConeEndMatchingTheOutsideFollows,
+                "A cone under a hollow tank, its upper end sized to the tank's "
+                + "OUTER diameter. A cone names its ends topDiameter and "
+                + "bottomDiameter and a hollow tank names its outerDiameter, and all "
+                + "three are the same channel - so the end that meets the joint "
+                + "should follow and the far end should not.");
+
+            yield return New("hollow_cone_pairs_each_end_with_its_own",
+                HollowConePairsEachEndWithItsOwn,
+                "A HOLLOW cone, where both ends have a bore and an outside of their "
+                + "own. Coupling has to pair top with top and bottom with bottom; "
+                + "pairing by channel alone would let one end's outside drag the "
+                + "other end's bore about.");
+
+            yield return New("hollow_nested_off_the_axis", HollowNestedOffTheAxis,
+                "A part nested inside the bore but pushed off to one side, still "
+                + "clear of the wall. Nothing here assumes the two are coaxial, and "
+                + "a containment test that did would call this not-nested.");
+
+            yield return New("hollow_nested_constant_keeps_the_clearance",
+                HollowNestedConstantKeepsTheClearance,
+                "A nested part under CONSTANT coupling. The bore grows and the part "
+                + "inside grows with it, keeping the room the player left around it. "
+                + "The same setting governs a wall and a clearance, because they are "
+                + "the same question asked twice.");
+
+            yield return New("hollow_nested_proportional_keeps_the_fraction",
+                HollowNestedProportionalKeepsTheFraction,
+                "The same nest under PROPORTIONAL coupling: the part inside stays the "
+                + "same fraction of the bore rather than the same distance from it.");
+
+            yield return New("hollow_nested_soft_only_moves_when_the_room_runs_out",
+                HollowNestedSoftOnlyWhenSqueezed,
+                "Under SOFT coupling a nested part is left alone while it still fits "
+                + "and pushed in only when the bore closes on it. Two steps in one "
+                + "scenario, because the thing under test is the difference between "
+                + "them.");
+
+            yield return New("hollow_nested_part_pushes_the_bore", HollowNestedPartPushesTheBore,
+                "The relationship read from the other end: the part INSIDE is resized "
+                + "and the bore around it makes room. A clearance is a statement about "
+                + "two surfaces, so it would be odd for it to hold when one moves and "
+                + "not when the other does.");
+
+            yield return New("hollow_nested_hollow_couples_within_each_part",
+                HollowNestedHollowCouplesWithinEachPart,
+                "A hollow part nested inside a hollow part. One pair of surfaces "
+                + "connects the two - the inner part's outside against the outer "
+                + "part's bore - while each part's own bore and outside remain its own "
+                + "business.");
+
             yield return New("rolib_stack_propagates_downwards", ROLibStackPropagatesDownwards,
                 "The same RO-Tanks stack driven from the TOP instead of the bottom. "
                 + "ROLib rewrites a tank's length whenever its diameter changes, so a "
@@ -923,6 +1061,1207 @@ namespace DimensionSync.GameTests
             context.Check("second part follows", PartFields.Get(stack.Parts[1], PPShapeModule, "diameter"), 1.5f);
             context.Check("odd-sized part unchanged", PartFields.Get(stack.Parts[2], PPShapeModule, "diameter"), 2.5f);
             context.Check("part beyond it unchanged", PartFields.Get(stack.Parts[3], PPShapeModule, "diameter"), 1.25f);
+        }
+
+        /// <summary>Which pair of faces a nested part is lined up with, if any.</summary>
+        private enum NestAlign
+        {
+            /// <summary>Neither pair lines up: the part floats in the middle of the bore.</summary>
+            Floating,
+
+            /// <summary>Its near face sits in the plane of the hollow part's near face.</summary>
+            NearFacesFlush,
+
+            /// <summary>Its far face sits in the plane of the hollow part's far face.</summary>
+            FarFacesFlush,
+        }
+
+        /// <summary>What a built nest consists of, and where its faces ended up.</summary>
+        private class Nest
+        {
+            /// <summary>The hollow part the other sits inside.</summary>
+            public Part Hollow;
+
+            /// <summary>The part inside the bore.</summary>
+            public Part Inside;
+
+            /// <summary>True once it is built and the nested part really is inside.</summary>
+            public bool Ok;
+
+            /// <summary>
+            /// Which faces ended up flush, measured from the built craft rather than
+            /// taken from what was asked for.
+            /// </summary>
+            /// <remarks>
+            /// The two can differ. ROLib refuses to shorten a tank below a minimum
+            /// that rises with its diameter, so asking for a part half the length of
+            /// its host can quietly get one the same length - which nests
+            /// coextensively, with BOTH pairs of faces flush, while the fixture goes
+            /// on calling it whatever was requested. A scenario that cares about the
+            /// alignment should assert this, not the request.
+            /// </remarks>
+            public string Achieved = "unmeasured";
+        }
+
+        /// <summary>Half a part's length along the stack axis, in world units.</summary>
+        /// <param name="part">The part to measure.</param>
+        /// <param name="module">The module carrying its length field.</param>
+        private static float HalfLengthOf(Part part, string module)
+        {
+            float length = PartFields.Get(part, module, LengthFieldOf(module));
+            return float.IsNaN(length) ? 0f : length / 2f;
+        }
+
+        /// <summary>What a module calls its length.</summary>
+        /// <param name="module">The dimension module.</param>
+        /// <remarks>
+        /// ProceduralParts says "length" and ROLib says "currentLength", inherited
+        /// from SSTU. Asking either for the other's name returns NaN, which read as
+        /// "the nested part reports no length" and skipped the one scenario that used
+        /// an RO tank - a mismatch of vocabulary reported as a missing part.
+        /// </remarks>
+        private static string LengthFieldOf(string module)
+        {
+            return module == ROModule ? "currentLength" : "length";
+        }
+
+        /// <summary>
+        /// Build a hollow tank with another part slid down inside its bore.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="nest">Filled in with both parts.</param>
+        /// <param name="insideName">The part to nest.</param>
+        /// <param name="insideModule">Its dimension module.</param>
+        /// <param name="insideField">Its diameter field.</param>
+        /// <param name="insideSize">How wide to make it - narrower than the bore, so there is a gap.</param>
+        /// <param name="sink">
+        /// How far to slide it down from where stacking left it, as a fraction of the
+        /// hollow tank's length: 1 puts its far face flush with the hollow tank's near
+        /// face, 2 carries it right through to the other end.
+        /// </param>
+        /// <param name="inner">The hollow tank's bore.</param>
+        /// <param name="outer">The hollow tank's outside.</param>
+        /// <remarks>
+        /// Stack first and slide afterwards, which is what a player does: the parts
+        /// are joined at a node and then one is dragged with the offset gizmo until it
+        /// disappears inside the other. The joint survives the move, so the graph
+        /// still sees them as neighbours - what changes is only where they sit.
+        /// </remarks>
+        private static IEnumerator BuildNest(TestContext context, Nest nest,
+                                             string insideName, string insideModule,
+                                             string insideField, float insideSize,
+                                             NestAlign align, float inner, float outer,
+                                             bool flipped = false, float sideways = 0f,
+                                             string mode = "hard", Part attachTo = null,
+                                             float insideBore = 0f)
+        {
+            nest.Ok = false;
+
+            // Built under HARD, whatever mode the scenario wants, and switched at the
+            // end. Constructing a fixture writes dimensions, and under any other mode
+            // those writes drag their partners along: a part asked for as 0.75/1.50
+            // was assembled as 1.25/1.75, because setting the bore moved the outside
+            // and then setting the outside moved the bore back. The fixture was being
+            // built by the rule it exists to test.
+            if (!PartFields.SetHollowMode("hard"))
+            {
+                context.Skip($"could not set the hollow coupling mode to '{mode}' - "
+                             + "either DimensionSync is not loaded or it has no such mode");
+                yield break;
+            }
+
+            Part hollow = EditorBuilder.Spawn(PPTank);
+            Part inside = EditorBuilder.Spawn(insideName);
+            if (hollow == null || inside == null)
+            {
+                context.Skip($"could not spawn {PPTank} and {insideName}");
+                yield break;
+            }
+            yield return context.Frames(6);
+
+            string why = ConvertToHollow(hollow, inner, outer);
+            if (why != null) { context.Skip(why); yield break; }
+            PartFields.Set(inside, insideModule, insideField, insideSize, WriteMode.PartActionWindow);
+            yield return context.Frames(2);
+
+            // Hollow BEFORE it is positioned, if it is to be hollow at all. Changing a
+            // part's shape changes its length, and KSP re-seats it on its attach node
+            // when it does - so converting after the slide put the part back on the
+            // joint and out of the bore entirely, while the fixture went on describing
+            // it as nested. The geometry log said "offset y 0.563" against a host half
+            // of 0.563: sitting exactly on the face, not inside.
+            if (insideBore > 0f)
+            {
+                string boreWhy = ConvertToHollow(inside, insideBore, insideSize);
+                if (boreWhy != null) { context.Skip(boreWhy); yield break; }
+                yield return context.Settled();
+                insideModule = PPHollowModule;
+            }
+
+            // Re-rooting is for the FIRST nest only. Calling SetRoot again for a second
+            // one re-roots the whole ship, and the parts of the first nest are
+            // re-parented under it: the second host ends up owning nothing, the first
+            // owns both nested parts, and the craft is not what the scenario thinks it
+            // built. It still passed, because every check was about diameters and none
+            // asked what was attached to what.
+            if (attachTo == null)
+            {
+                EditorBuilder.SetRoot(hollow);
+            }
+            else
+            {
+                EditorBuilder.PresentShip();
+                Vector3 out_ = EditorBuilder.DirectionAcrossCamera(attachTo)
+                               * EditorBuilder.SurfaceRadius(attachTo);
+                if (!EditorBuilder.SurfaceAttach(attachTo, hollow, out_))
+                {
+                    context.Result.Error("could not attach the second hollow tank to the first");
+                    yield break;
+                }
+            }
+
+            if (!EditorBuilder.StackOnTop(hollow, inside))
+            {
+                context.Result.Error("could not stack the part on the hollow tank");
+                yield break;
+            }
+            yield return context.Settled();
+
+            // The nested part is made SHORTER than the hollow one, or the alignments
+            // below cannot be told apart: with equal lengths, sliding it in until one
+            // face lines up lines the other one up too, and the "one face flush" and
+            // "both faces flush" cases are the same craft. The first version of this
+            // had both at 0.75 and built a coextensive pair for one case and a part
+            // sitting entirely outside for another, while the names claimed otherwise.
+            float span = PartFields.Get(hollow, PPHollowModule, "length");
+            if (float.IsNaN(span) || span <= 0f)
+            {
+                context.Skip("the hollow tank reports no length to slide along");
+                yield break;
+            }
+
+            float shorter = span * 0.5f;
+            PartFields.Set(inside, insideModule, LengthFieldOf(insideModule), shorter,
+                           WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float half = HalfLengthOf(inside, insideModule);
+            if (half <= 0f)
+            {
+                context.Skip("the nested part reports no length");
+                yield break;
+            }
+
+            // Where stacking left it: its near face against the hollow tank's near
+            // face, so its centre sits half of each length above the hollow's centre.
+            float stacked = span / 2f + half;
+
+            // Where it should end up, measured as the centre's offset from the hollow
+            // part's own centre.
+            float wanted;
+            switch (align)
+            {
+                case NestAlign.NearFacesFlush:  wanted = span / 2f - half; break;
+                case NestAlign.FarFacesFlush:   wanted = half - span / 2f; break;
+                default:                        wanted = 0f; break;
+            }
+
+            Vector3 down = -hollow.transform.up.normalized;
+            inside.transform.position += down * (stacked - wanted);
+
+            // Off the shared axis, for the case where a nest is not coaxial. Nothing
+            // about nesting requires the two to share a centre line, and a containment
+            // test written as though they must would quietly call this not-nested.
+            if (Mathf.Abs(sideways) > 1e-4f)
+                inside.transform.position += hollow.transform.right.normalized * sideways;
+
+            // Turned end for end about the joint, which leaves the same face touching
+            // and points what was its far face down the bore instead.
+            if (flipped)
+                inside.transform.rotation = Quaternion.AngleAxis(180f, hollow.transform.right)
+                                            * inside.transform.rotation;
+            inside.attPos0 = inside.transform.localPosition;
+            inside.attRotation0 = inside.transform.localRotation;
+
+            // Announced the way the editor announces a gizmo drag, which is what this
+            // is standing in for. Without it the mod never learns the part moved, and
+            // the rules that care where a part sits would be reasoning about the
+            // place it was attached at rather than the place it is.
+            GameEvents.onEditorPartEvent.Fire(ConstructionEventType.PartOffset, inside);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+            EditorBuilder.LookDownAt(EditorBuilder.BodyCentreOf(hollow));
+
+            // Verified, not assumed. A nest that is not actually nested would make
+            // every check below meaningless, and the arithmetic above depends on
+            // lengths and axes this test does not own.
+            Vector3 offset = hollow.transform.InverseTransformPoint(inside.transform.position);
+            float alongAxis = Mathf.Abs(offset.y);
+            float across = new Vector2(offset.x, offset.z).magnitude;
+            float insideRadius = insideSize / 2f;
+            // Genuinely inside, not touching. The first version allowed the centre to
+            // sit a full half-length outside the hollow part, which passed a fixture
+            // whose nested part was entirely outside the bore with one face against
+            // it - and every check downstream of that was meaningless.
+            float reach = alongAxis + HalfLengthOf(inside, insideModule);
+            bool within = reach <= span / 2f + 0.01f
+                          && across + insideRadius < inner / 2f;
+
+            // What the faces actually did, from the geometry. Both parts are centred
+            // on the same axis, so a face is flush when the two planes coincide.
+            float half2 = HalfLengthOf(inside, insideModule);
+            bool nearFlush = Mathf.Abs((offset.y + half2) - span / 2f) <= 0.01f;
+            bool farFlush = Mathf.Abs((offset.y - half2) + span / 2f) <= 0.01f;
+            nest.Achieved = nearFlush && farFlush ? "both"
+                          : nearFlush ? "near"
+                          : farFlush ? "far"
+                          : "neither";
+
+            Harness.Log($"NEST {insideName} asked {align}{(flipped ? " flipped" : string.Empty)}, " +
+                        $"built {nest.Achieved}: centre {offset.y:F3}, half {half2:F3}, " +
+                        $"reaches {reach:F3} of {span / 2f:F3}, across {across:F3} + " +
+                        $"radius {insideRadius:F3} vs bore {inner / 2f:F3}, nested {within}");
+
+            if (!within)
+            {
+                context.Result.Fail("the part did not end up inside the hollow tank's bore");
+                yield break;
+            }
+
+            // Structure, not just sizes. Every check in these scenarios is about
+            // diameters, and diameters cannot tell a well-built craft from a mangled
+            // one: a second SetRoot re-parented one nest's part under the other host
+            // and nothing noticed for hours, because the numbers were all still
+            // right. Two malformed fixtures got through that way.
+            if (inside.parent != hollow)
+            {
+                context.Result.Fail($"the nested part is attached to " +
+                                    $"{(inside.parent == null ? "nothing" : inside.parent.name)}, " +
+                                    $"not to the hollow tank it is supposed to sit inside");
+                yield break;
+            }
+
+            ShipConstruct built = EditorLogic.fetch?.ship;
+            if (built != null)
+            {
+                int loose = 0;
+                foreach (Part part in built.parts)
+                    if (part != null && part.parent == null && part != EditorLogic.RootPart) loose++;
+                if (loose > 0)
+                {
+                    context.Result.Fail($"{loose} part(s) are attached to nothing - the fixture " +
+                                        "has built more than one craft");
+                    yield break;
+                }
+            }
+
+            // Now that everything is where it should be, adopt the mode under test.
+            if (!PartFields.SetHollowMode(mode))
+            {
+                context.Skip($"could not set the hollow coupling mode to '{mode}'");
+                yield break;
+            }
+
+            nest.Hollow = hollow;
+            nest.Inside = inside;
+            nest.Ok = true;
+        }
+
+        /// <summary>
+        /// Change the bore of a nest and report whether the nested part followed.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="nest">The built nest.</param>
+        /// <param name="insideModule">The nested part's dimension module.</param>
+        /// <param name="insideField">Its diameter field.</param>
+        /// <param name="bore">What to take the bore to.</param>
+        private static IEnumerator BoreMovesAndNestIsMeasured(TestContext context, Nest nest,
+                                                              string insideModule, string insideField,
+                                                              float bore)
+        {
+            float wasBore = PartFields.Get(nest.Hollow, PPHollowModule, "innerDiameter");
+            float was = PartFields.Get(nest.Inside, insideModule, insideField);
+            float clearance = wasBore - was;
+
+            yield return context.Say($"Taking the bore to {bore:F1} m.",
+                                     $"Constant coupling, so the part inside should keep the "
+                                     + $"{clearance:F2} m of room around it and end up at "
+                                     + $"{bore - clearance:F2} m.");
+
+            PartFields.Set(nest.Hollow, PPHollowModule, "innerDiameter", bore, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float now = PartFields.Get(nest.Inside, insideModule, insideField);
+            Harness.Log($"NEST bore {wasBore:F3} -> {bore:F3}: nested part {was:F3} -> {now:F3} " +
+                        $"(clearance {clearance:F3})");
+
+            context.Check("the bore took the change",
+                          PartFields.Get(nest.Hollow, PPHollowModule, "innerDiameter"), bore, 0.05f);
+
+            // These scenarios exist to prove the pairing is RECOGNISED in each
+            // placement, so they have to run in a mode where recognition changes
+            // something. Under hard they passed whatever IsNestedIn returned - the
+            // part was never going to move - which made five careful geometric
+            // fixtures assert nothing about geometry at all.
+            context.Check("the nested part followed, keeping its clearance",
+                          now, bore - clearance, 0.05f);
+        }
+
+        /// <summary>
+        /// Build a nest, move the host's bore, and hand back what the nested part did.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="mode">The coupling mode to build under.</param>
+        /// <param name="bore">What to take the bore to.</param>
+        /// <param name="nest">Filled in with the built pair.</param>
+        /// <param name="was">The nested part's diameter before the change.</param>
+        private static IEnumerator NestThenMoveTheBore(TestContext context, string mode, float bore,
+                                                       Nest nest, float[] was)
+        {
+            was[0] = float.NaN;
+
+            yield return BuildNest(context, nest, PPTank, PPShapeModule, "diameter",
+                                   1.5f, NestAlign.NearFacesFlush, 2.5f, 3f, mode: mode);
+            if (!nest.Ok) yield break;
+
+            was[0] = PartFields.Get(nest.Inside, PPShapeModule, "diameter");
+
+            yield return context.Say($"Taking the bore from 2.5 m to {bore:F2} m.",
+                                     $"Coupling is {mode}.");
+
+            PartFields.Set(nest.Hollow, PPHollowModule, "innerDiameter", bore,
+                           WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            Harness.Log($"NESTFOLLOW {mode}: bore 2.500 -> " +
+                        $"{PartFields.Get(nest.Hollow, PPHollowModule, "innerDiameter"):F4}, " +
+                        $"nested {was[0]:F4} -> " +
+                        $"{PartFields.Get(nest.Inside, PPShapeModule, "diameter"):F4}");
+        }
+
+        /// <summary>Constant coupling holds the room around a nested part.</summary>
+        private static IEnumerator HollowNestedConstantKeepsTheClearance(TestContext context)
+        {
+            var nest = new Nest();
+            var was = new float[1];
+            yield return NestThenMoveTheBore(context, "constant", 2f, nest, was);
+            if (!nest.Ok) yield break;
+
+            // Clearance was 2.5 - 1.5 = 1.0 across the diameters; a 2 m bore should
+            // leave a 1 m part.
+            context.Check("the nested part kept its clearance",
+                          PartFields.Get(nest.Inside, PPShapeModule, "diameter"), 1f, 0.05f);
+        }
+
+        /// <summary>Proportional coupling holds the fraction instead.</summary>
+        private static IEnumerator HollowNestedProportionalKeepsTheFraction(TestContext context)
+        {
+            var nest = new Nest();
+            var was = new float[1];
+            yield return NestThenMoveTheBore(context, "proportional", 2f, nest, was);
+            if (!nest.Ok) yield break;
+
+            // It was 1.5 of 2.5, three fifths; three fifths of 2 is 1.2.
+            context.Check("the nested part kept its fraction of the bore",
+                          PartFields.Get(nest.Inside, PPShapeModule, "diameter"), 1.2f, 0.05f);
+        }
+
+        /// <summary>Soft coupling leaves it alone until the room runs out.</summary>
+        private static IEnumerator HollowNestedSoftOnlyWhenSqueezed(TestContext context)
+        {
+            var nest = new Nest();
+            var was = new float[1];
+
+            // A bore that GROWS leaves the part where the player put it.
+            yield return NestThenMoveTheBore(context, "soft", 2.8f, nest, was);
+            if (!nest.Ok) yield break;
+            context.Check("a bore with room to spare left the nested part alone",
+                          PartFields.Get(nest.Inside, PPShapeModule, "diameter"), was[0], 0.02f);
+
+            yield return context.Say("Closing the bore to 2 m - still wider than the part.",
+                                     "A 1.5 m part fits inside a 2 m bore with room to spare, so "
+                                     + "soft coupling leaves it exactly where it is. Keeping the "
+                                     + "original gap here would be constant coupling, not soft.");
+
+            PartFields.Set(nest.Hollow, PPHollowModule, "innerDiameter", 2f,
+                           WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float roomy = PartFields.Get(nest.Inside, PPShapeModule, "diameter");
+            Harness.Log($"NESTFOLLOW soft, bore 2.0 with a {was[0]:F3} part: {roomy:F4}");
+            context.Check("a bore that still fits the part left it alone", roomy, was[0], 0.02f);
+
+            yield return context.Say("Now closing it to 1.2 m, narrower than the part.",
+                                     "Now it genuinely will not fit, so soft gives up the least it "
+                                     + "can and the part ends just inside the bore.");
+
+            PartFields.Set(nest.Hollow, PPHollowModule, "innerDiameter", 1.2f,
+                           WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float squeezed = PartFields.Get(nest.Inside, PPShapeModule, "diameter");
+            float bore = PartFields.Get(nest.Hollow, PPHollowModule, "innerDiameter");
+            Harness.Log($"NESTFOLLOW soft squeezed: bore {bore:F4}, nested {roomy:F4} -> {squeezed:F4}");
+            context.CheckTrue($"once it would not fit, the part moved ({roomy:F3} -> {squeezed:F3})",
+                              squeezed < roomy - 0.05f);
+            context.CheckTrue($"and only just inside the bore ({squeezed:F3} against {bore:F3})",
+                              squeezed < bore && squeezed > bore - 0.1f);
+        }
+
+        /// <summary>Nested with its far face flush against the hollow tank's near face.</summary>
+        private static IEnumerator HollowNestedFarFaceFlush(TestContext context)
+        {
+            var nest = new Nest();
+            yield return BuildNest(context, nest, PPTank, PPShapeModule, "diameter",
+                                   1.5f, NestAlign.NearFacesFlush, 2.5f, 3f, mode: "constant");
+            if (!nest.Ok) yield break;
+            context.CheckTrue($"only the near faces ended up flush (built {nest.Achieved})",
+                              nest.Achieved == "near");
+            yield return BoreMovesAndNestIsMeasured(context, nest, PPShapeModule, "diameter", 2f);
+        }
+
+        /// <summary>Nested the whole way through, so the far faces line up.</summary>
+        private static IEnumerator HollowNestedNearFaceFlush(TestContext context)
+        {
+            var nest = new Nest();
+            yield return BuildNest(context, nest, PPTank, PPShapeModule, "diameter",
+                                   1.5f, NestAlign.FarFacesFlush, 2.5f, 3f, mode: "constant");
+            if (!nest.Ok) yield break;
+            context.CheckTrue($"only the far faces ended up flush (built {nest.Achieved})",
+                              nest.Achieved == "far");
+            yield return BoreMovesAndNestIsMeasured(context, nest, PPShapeModule, "diameter", 2f);
+        }
+
+        /// <summary>Inside the bore but lined up with nothing.</summary>
+        private static IEnumerator HollowNestedWithoutFlushFaces(TestContext context)
+        {
+            var nest = new Nest();
+            yield return BuildNest(context, nest, PPTank, PPShapeModule, "diameter",
+                                   1.5f, NestAlign.Floating, 2.5f, 3f, mode: "constant");
+            if (!nest.Ok) yield break;
+            context.CheckTrue($"no faces ended up flush (built {nest.Achieved})",
+                              nest.Achieved == "neither");
+
+            float was = PartFields.Get(nest.Inside, PPShapeModule, "diameter");
+
+            yield return context.Say("Taking the bore to 2 m, with the same coupling as the others.",
+                                     "This part lines up with nothing, so it is not a nest and "
+                                     + "should be left exactly where it is - even though every "
+                                     + "other scenario in this group moves.");
+
+            PartFields.Set(nest.Hollow, PPHollowModule, "innerDiameter", 2f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float now = PartFields.Get(nest.Inside, PPShapeModule, "diameter");
+            Harness.Log($"NEST floating control: nested part {was:F3} -> {now:F3}");
+            context.Check("the bore took the change",
+                          PartFields.Get(nest.Hollow, PPHollowModule, "innerDiameter"), 2f, 0.05f);
+            context.Check("and the part that lines up with nothing was left alone", now, was);
+        }
+
+        /// <summary>
+        /// Turned end for end about the joint, so the same face still touches but the
+        /// far face now points down the bore.
+        /// </summary>
+        /// <remarks>
+        /// The case a rule keyed on "which face was attached" would get wrong. The
+        /// joint has not changed and neither has the touching face; what has changed
+        /// is which of the nested part's ends is deep inside the hollow one. A test
+        /// that only ever built parts the right way up would never notice.
+        /// </remarks>
+        private static IEnumerator HollowNestedFlippedAboutTheJoint(TestContext context)
+        {
+            var nest = new Nest();
+            yield return BuildNest(context, nest, PPTank, PPShapeModule, "diameter",
+                                   1.5f, NestAlign.NearFacesFlush, 2.5f, 3f, flipped: true, mode: "constant");
+            if (!nest.Ok) yield break;
+            context.CheckTrue($"only the near faces ended up flush (built {nest.Achieved})",
+                              nest.Achieved == "near");
+            yield return BoreMovesAndNestIsMeasured(context, nest, PPShapeModule, "diameter", 2f);
+        }
+
+        /// <summary>Two RO tanks nested in two hollow tanks, as a mirrored pair.</summary>
+        private static IEnumerator HollowNestedROTankMirrored(TestContext context)
+        {
+            string roTank = ROTankPart();
+            if (roTank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var first = new Nest();
+            yield return BuildNest(context, first, roTank, ROModule, ROField,
+                                   1.5f, NestAlign.NearFacesFlush, 2.5f, 3f, mode: "constant");
+            if (!first.Ok) yield break;
+
+            var second = new Nest();
+            yield return BuildNest(context, second, roTank, ROModule, ROField,
+                                   1.5f, NestAlign.NearFacesFlush, 2.5f, 3f, mode: "constant",
+                                   attachTo: first.Hollow);
+            if (!second.Ok) yield break;
+
+            Harness.Log($"NEST mirrored RO pair built {first.Achieved} / {second.Achieved}, " +
+                        $"{Vector3.Distance(first.Hollow.transform.position, second.Hollow.transform.position):F2} m apart");
+
+            // Apart, not on top of one another. A mirrored pair that occupies one
+            // place is not a mirrored pair.
+            context.CheckTrue("the two nests are clear of each other",
+                              Vector3.Distance(first.Hollow.transform.position,
+                                               second.Hollow.transform.position) > 2f);
+            context.CheckTrue($"both sides of the mirrored pair nested the same way "
+                              + $"({first.Achieved} / {second.Achieved})",
+                              second.Achieved == first.Achieved);
+
+            EditorBuilder.LinkSymmetry(first.Hollow, second.Hollow);
+            EditorBuilder.LinkSymmetry(first.Inside, second.Inside);
+            yield return context.Settled();
+
+            EditorBuilder.WillEdit(first.Hollow, growth: 2f);
+            yield return BoreMovesAndNestIsMeasured(context, first, ROModule, ROField, 2f);
+
+            // Whatever the rule does or does not do, the two sides must agree.
+            context.Check("the mirrored bores agree",
+                          PartFields.Get(second.Hollow, PPHollowModule, "innerDiameter"),
+                          PartFields.Get(first.Hollow, PPHollowModule, "innerDiameter"), 0.02f);
+            context.Check("and the mirrored nested parts agree",
+                          PartFields.Get(second.Inside, ROModule, ROField),
+                          PartFields.Get(first.Inside, ROModule, ROField), 0.02f);
+        }
+
+        /// <summary>Resizing what is inside moves the bore around it.</summary>
+        private static IEnumerator HollowNestedPartPushesTheBore(TestContext context)
+        {
+            var nest = new Nest();
+            yield return BuildNest(context, nest, PPTank, PPShapeModule, "diameter",
+                                   1.5f, NestAlign.NearFacesFlush, 2.5f, 3f, mode: "constant");
+            if (!nest.Ok) yield break;
+
+            yield return context.Say("Taking the NESTED part from 1.5 m to 2 m.",
+                                     "It had 1 m of room around it and should keep it, so the "
+                                     + "bore has to open from 2.5 m to 3 m.");
+
+            PartFields.Set(nest.Inside, PPShapeModule, "diameter", 2f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float bore = PartFields.Get(nest.Hollow, PPHollowModule, "innerDiameter");
+            float outer = PartFields.Get(nest.Hollow, PPHollowModule, "outerDiameter");
+            Harness.Log($"NESTPUSH nested 1.500 -> " +
+                        $"{PartFields.Get(nest.Inside, PPShapeModule, "diameter"):F4}, " +
+                        $"bore 2.500 -> {bore:F4}, host outside {outer:F4}");
+
+            context.Check("the nested part took the change",
+                          PartFields.Get(nest.Inside, PPShapeModule, "diameter"), 2f, 0.05f);
+            context.Check("and the bore opened to keep the clearance", bore, 3f, 0.05f);
+        }
+
+        /// <summary>
+        /// A hollow part inside a hollow part: one pair connects, each part keeps its
+        /// own.
+        /// </summary>
+        private static IEnumerator HollowNestedHollowCouplesWithinEachPart(TestContext context)
+        {
+            var nest = new Nest();
+            yield return BuildNest(context, nest, PPTank, PPShapeModule, "diameter",
+                                   1.5f, NestAlign.NearFacesFlush, 2.5f, 3f, mode: "constant",
+                                   insideBore: 0.75f);
+            if (!nest.Ok) yield break;
+
+            // What the conversion actually produced, before anything is changed. The
+            // predicted arithmetic depends on these being 0.75 and 1.5, and asking for
+            // a shape is not the same as getting one - ProceduralParts adjusts its own
+            // limits on every shape change, and this scenario's numbers only mean
+            // something if they start where they are supposed to.
+            float startBore = PartFields.Get(nest.Hollow, PPHollowModule, "innerDiameter");
+            float startInnerOuter = PartFields.Get(nest.Inside, PPHollowModule, "outerDiameter");
+            float startInnerBore = PartFields.Get(nest.Inside, PPHollowModule, "innerDiameter");
+            Harness.Log($"NESTHOLLOW start: host bore {startBore:F4}, " +
+                        $"inner part {startInnerBore:F4}/{startInnerOuter:F4} " +
+                        $"(wall {startInnerOuter - startInnerBore:F4}, " +
+                        $"clearance {startBore - startInnerOuter:F4})");
+
+            yield return context.Say("Opening the OUTER part's bore from 2.5 m to 2.8 m.",
+                                     "The inner part's outside should follow, keeping its "
+                                     + "clearance. Its own bore should follow THAT, keeping its "
+                                     + "own wall - two separate relationships, one after the "
+                                     + "other, not one rule reaching across both parts.");
+
+            PartFields.Set(nest.Hollow, PPHollowModule, "innerDiameter", 2.8f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float innerOuter = PartFields.Get(nest.Inside, PPHollowModule, "outerDiameter");
+            float innerBore = PartFields.Get(nest.Inside, PPHollowModule, "innerDiameter");
+            Harness.Log($"NESTHOLLOW outer bore -> " +
+                        $"{PartFields.Get(nest.Hollow, PPHollowModule, "innerDiameter"):F4}; " +
+                        $"inner part outside {innerOuter:F4}, its own bore {innerBore:F4}");
+
+            // Clearance was 2.5 - 1.5 = 1.0, so a 2.8 m bore leaves a 1.8 m part.
+            context.Check("the nested hollow part kept its clearance", innerOuter, 1.8f, 0.05f);
+
+            // Its own wall was 1.5 - 0.75 = 0.75, held by its own coupling.
+            context.Check("and kept its own wall as well", innerBore, 1.05f, 0.05f);
+        }
+
+        /// <summary>
+        /// Two mirrored nests close enough that a host might reach the wrong part.
+        /// </summary>
+        /// <remarks>
+        /// Built deliberately without a settled expectation. Symmetry counterparts turn
+        /// up in a part's link list, so a host is offered its counterpart's nested part
+        /// as a candidate; containment rejects it while the two nests are far apart,
+        /// and nobody has decided what should happen when they are not. This records
+        /// what does happen and asserts only what has to be true whichever way that
+        /// goes - so there is something to experiment with rather than a rule to argue
+        /// about in the abstract.
+        /// </remarks>
+        private static IEnumerator HollowNestedMirroredPairCloseTogether(TestContext context)
+        {
+            var first = new Nest();
+            yield return BuildNest(context, first, PPTank, PPShapeModule, "diameter",
+                                   1.5f, NestAlign.NearFacesFlush, 2.5f, 3f, mode: "constant");
+            if (!first.Ok) yield break;
+
+            var second = new Nest();
+            yield return BuildNest(context, second, PPTank, PPShapeModule, "diameter",
+                                   1.5f, NestAlign.NearFacesFlush, 2.5f, 3f, mode: "constant",
+                                   attachTo: first.Hollow);
+            if (!second.Ok) yield break;
+
+            // As close as two solid objects can be: touching, not overlapping. Half a
+            // diameter put their centres 1.65 m apart with 3 m hosts, which is not
+            // "close together" but one part buried halfway inside the other.
+            //
+            // Worth recording what that showed, because it settles the question this
+            // fixture was built to explore. For a host to adopt its counterpart's
+            // nested part, its bore would have to reach across the gap between them -
+            // and while the hosts do not intersect, that gap is at least a full
+            // diameter, which no bore inside that diameter can span. The ambiguity
+            // cannot arise geometrically as long as the two hosts are solid.
+            Vector3 towards = (first.Hollow.transform.position - second.Hollow.transform.position);
+            float gap = towards.magnitude;
+            float wanted = PartFields.Get(first.Hollow, PPHollowModule, "outerDiameter") * 1.02f;
+            if (gap > wanted)
+            {
+                // The HOST only. Its nested part is its child and comes along with it;
+                // moving both applied the shift twice to the part, which ended up 1.35 m
+                // off its own host's axis and was rejected as not nested at all. The
+                // scenario then read as a mirrored pair disagreeing, when what had
+                // actually happened was that the fixture had thrown one of them out of
+                // its own bore.
+                Vector3 pull = towards.normalized * (gap - wanted);
+                second.Hollow.transform.position += pull;
+                second.Hollow.attPos0 = second.Hollow.transform.localPosition;
+                GameEvents.onEditorPartEvent.Fire(ConstructionEventType.PartOffset, second.Hollow);
+                yield return context.Settled();
+            }
+
+            EditorBuilder.LinkSymmetry(first.Hollow, second.Hollow);
+            EditorBuilder.LinkSymmetry(first.Inside, second.Inside);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+            EditorBuilder.LookDownAt(EditorBuilder.BodyCentreOf(first.Hollow));
+
+            float apart = Vector3.Distance(first.Hollow.transform.position,
+                                           second.Hollow.transform.position);
+            Harness.Log($"NESTCLOSE two nests {apart:F2} m apart, bores 2.500, " +
+                        $"nested parts 1.500");
+
+            yield return context.Say($"Two nests {apart:F1} m apart, linked as counterparts.",
+                                     "Opening one bore to 2.8 m. Both nested parts should end up "
+                                     + "agreeing with each other whatever else happens - that is "
+                                     + "the part nobody has to decide.");
+
+            PartFields.Set(first.Hollow, PPHollowModule, "innerDiameter", 2.8f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float firstInside = PartFields.Get(first.Inside, PPShapeModule, "diameter");
+            float secondInside = PartFields.Get(second.Inside, PPShapeModule, "diameter");
+            float firstBore = PartFields.Get(first.Hollow, PPHollowModule, "innerDiameter");
+            float secondBore = PartFields.Get(second.Hollow, PPHollowModule, "innerDiameter");
+            Harness.Log($"NESTCLOSE after: bores {firstBore:F3} / {secondBore:F3}, " +
+                        $"nested {firstInside:F3} / {secondInside:F3}");
+
+            // Whatever is decided about hosts reaching their counterpart's parts, a
+            // mirrored pair that disagrees with itself is wrong under every reading.
+            context.Check("the mirrored bores agree", secondBore, firstBore, 0.05f);
+            context.Check("and the mirrored nested parts agree", secondInside, firstInside, 0.05f);
+        }
+
+        /// <summary>The ProceduralParts module that describes a hollow cone.</summary>
+        private const string PPHollowConeModule = "ProceduralShapeHollowCone";
+
+        /// <summary>
+        /// A cone on top of a hollow tank, its lower end matched to the tank's outside.
+        /// </summary>
+        private static IEnumerator HollowConeEndMatchingTheOutsideFollows(TestContext context)
+        {
+            if (!PartFields.SetHollowMode("hard"))
+            {
+                context.Skip("could not set the hollow coupling mode");
+                yield break;
+            }
+
+            Part hollow = EditorBuilder.Spawn(PPTank);
+            Part cone = EditorBuilder.Spawn(PPTank);
+            if (hollow == null || cone == null)
+            {
+                context.Skip("no ProceduralParts tank installed");
+                yield break;
+            }
+            yield return context.Frames(6);
+
+            string why = ConvertToHollow(hollow, 1f, 2f);
+            if (why != null) { context.Skip(why); yield break; }
+
+            // TOP end matched to the tank's outside, bottom end deliberately not -
+            // the hollow tank sits above the cone now, so the top is the joint.
+            if (ConvertToCone(cone, bottom: 1.25f, top: 2f) != null)
+            {
+                context.Skip("could not make the second tank a cone");
+                yield break;
+            }
+            yield return context.Frames(2);
+
+            // Cone below, hollow tank on top, so the bore faces the camera.
+            EditorBuilder.SetRoot(cone);
+            if (!EditorBuilder.StackOnTop(cone, hollow))
+            {
+                context.Result.Error("could not stack the hollow tank on the cone");
+                yield break;
+            }
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            yield return context.Say("Taking the hollow tank's outer diameter to 3 m.",
+                                     "The cone's upper end meets the joint and is 2 m, the same "
+                                     + "as the outside, so it should follow. Its lower end is "
+                                     + "1.25 m and should not.");
+
+            PartFields.Set(hollow, PPHollowModule, "outerDiameter", 3f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            const string coneModule = "ProceduralShapeCone";
+            float bottom = PartFields.Get(cone, coneModule, "bottomDiameter");
+            float top = PartFields.Get(cone, coneModule, "topDiameter");
+            Harness.Log($"HOLLOWCONE bottom {bottom:F4} top {top:F4}");
+
+            context.Check("the cone's near end followed the outside", top, 3f);
+            context.Check("and its far end was left alone", bottom, 1.25f);
+        }
+
+        /// <summary>
+        /// A hollow cone: two ends, each with its own bore and outside.
+        /// </summary>
+        /// <remarks>
+        /// The pairing test. Coupling looks for a partner on the other channel with
+        /// the SAME ends, so a hollow cone's top outside pairs with its top bore and
+        /// leaves the bottom alone. Matching on channel only would have one end of
+        /// the part reshaping the other, which is a shape nobody asked for and would
+        /// look like the mod inventing geometry.
+        /// </remarks>
+        private static IEnumerator HollowConePairsEachEndWithItsOwn(TestContext context)
+        {
+            if (!PartFields.SetHollowMode("constant"))
+            {
+                context.Skip("could not set the hollow coupling mode");
+                yield break;
+            }
+
+            Part cone = EditorBuilder.Spawn(PPTank);
+            if (cone == null) { context.Skip("no ProceduralParts tank installed"); yield break; }
+            yield return context.Frames(6);
+
+            if (PartFields.Module(cone, PPHollowConeModule) == null)
+            {
+                context.Skip("this tank has no hollow cone shape");
+                yield break;
+            }
+
+            // Written into the dormant module first, as the other conversions do.
+            PartFields.Set(cone, PPHollowConeModule, "topInnerDiameter", 1f, WriteMode.DirectAssignment);
+            PartFields.Set(cone, PPHollowConeModule, "topOuterDiameter", 2f, WriteMode.DirectAssignment);
+            PartFields.Set(cone, PPHollowConeModule, "bottomInnerDiameter", 1.5f, WriteMode.DirectAssignment);
+            PartFields.Set(cone, PPHollowConeModule, "bottomOuterDiameter", 2.5f, WriteMode.DirectAssignment);
+            if (!PartFields.SetProceduralPartsShape(cone, "Hollow Cone"))
+            {
+                context.Skip("could not switch the tank to a hollow cone");
+                yield break;
+            }
+            EditorBuilder.SetRoot(cone);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            yield return context.Say("Taking the TOP outer diameter from 2 m to 3 m.",
+                                     "Constant coupling, so the top bore should follow by the same "
+                                     + "metre. The bottom end is a separate pair and should not "
+                                     + "move at all.");
+
+            PartFields.Set(cone, PPHollowConeModule, "topOuterDiameter", 3f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float topInner = PartFields.Get(cone, PPHollowConeModule, "topInnerDiameter");
+            float bottomInner = PartFields.Get(cone, PPHollowConeModule, "bottomInnerDiameter");
+            float bottomOuter = PartFields.Get(cone, PPHollowConeModule, "bottomOuterDiameter");
+            Harness.Log($"HOLLOWCONE top inner {topInner:F4}, bottom inner {bottomInner:F4} " +
+                        $"outer {bottomOuter:F4}");
+
+            context.Check("the top bore kept the wall", topInner, 2f, 0.05f);
+            context.Check("the bottom bore was left alone", bottomInner, 1.5f, 0.05f);
+            context.Check("and so was the bottom outside", bottomOuter, 2.5f, 0.05f);
+        }
+
+        /// <summary>Nested, but pushed off the shared axis.</summary>
+        private static IEnumerator HollowNestedOffTheAxis(TestContext context)
+        {
+            var nest = new Nest();
+            yield return BuildNest(context, nest, PPTank, PPShapeModule, "diameter",
+                                   1f, NestAlign.NearFacesFlush, 2.5f, 3f,
+                                   sideways: 0.3f, mode: "constant");
+            if (!nest.Ok) yield break;
+            yield return BoreMovesAndNestIsMeasured(context, nest, PPShapeModule, "diameter", 2f);
+        }
+
+        /// <summary>The ProceduralParts module that describes a hollow cylinder.</summary>
+        private const string PPHollowModule = "ProceduralShapeHollowCylinder";
+
+        /// <summary>
+        /// Turn a ProceduralParts tank into a hollow cylinder of the given bore and
+        /// outside.
+        /// </summary>
+        /// <param name="part">The tank to convert.</param>
+        /// <param name="inner">The bore it should end up with.</param>
+        /// <param name="outer">The outer diameter it should end up with.</param>
+        /// <remarks>
+        /// Written into the dormant module before the shape is switched, for the same
+        /// reason the cone conversion does it: each shape module keeps its own
+        /// numbers, so switching first draws the part as whatever the hollow module
+        /// was last left at, which is a visible flash of a shape nobody asked for in
+        /// the middle of a step that is only setting up. The length is carried across
+        /// too, or the part changes height and shoves the stack about.
+        /// </remarks>
+        private static string ConvertToHollow(Part part, float inner, float outer)
+        {
+            float length = PartFields.Get(part, PartFields.ProceduralPartsShapeModule(part), "length");
+
+            if (PartFields.Module(part, PPHollowModule) == null)
+                return "this tank has no hollow cylinder shape";
+
+            PartFields.Set(part, PPHollowModule, "innerDiameter", inner, WriteMode.DirectAssignment);
+            PartFields.Set(part, PPHollowModule, "outerDiameter", outer, WriteMode.DirectAssignment);
+            if (!float.IsNaN(length) && length > 0f)
+                PartFields.Set(part, PPHollowModule, "length", length, WriteMode.DirectAssignment);
+
+            return PartFields.SetProceduralPartsShape(part, "Hollow Cylinder")
+                ? null
+                : "could not switch the tank to a hollow cylinder";
+        }
+
+        /// <summary>Build one hollow tank on its own, in a given coupling mode.</summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="mode">independent, proportional or constant.</param>
+        /// <param name="inner">The bore to start at.</param>
+        /// <param name="outer">The outer diameter to start at.</param>
+        /// <returns>The tank, or null after the scenario has been skipped.</returns>
+        private static Part BuildHollow(TestContext context, string mode, float inner, float outer)
+        {
+            if (!PartFields.SetHollowMode(mode))
+            {
+                context.Skip($"could not set the hollow coupling mode to '{mode}' - "
+                             + "either DimensionSync is not loaded or it has no such mode");
+                return null;
+            }
+
+            Part tank = EditorBuilder.Spawn(PPTank);
+            if (tank == null)
+            {
+                context.Skip("no ProceduralParts tank installed");
+                return null;
+            }
+            return tank;
+        }
+
+        /// <summary>Independent coupling leaves the other diameter where it is.</summary>
+        private static IEnumerator HollowIndependentLeavesTheBore(TestContext context)
+        {
+            Part tank = BuildHollow(context, "hard", 1f, 2f);
+            if (tank == null) yield break;
+            yield return context.Frames(6);
+
+            string why = ConvertToHollow(tank, 1f, 2f);
+            if (why != null) { context.Skip(why); yield break; }
+            EditorBuilder.SetRoot(tank);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+            EditorBuilder.LookDownAt(EditorBuilder.BodyCentreOf(tank));
+
+            yield return context.Say("Taking the outer diameter from 2 m to 3 m.",
+                                     "The bore should still read 1 m: independent means the two are "
+                                     + "left to themselves until they would collide.");
+
+            PartFields.Set(tank, PPHollowModule, "outerDiameter", 3f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            context.Check("the outside took the change",
+                          PartFields.Get(tank, PPHollowModule, "outerDiameter"), 3f);
+            context.Check("and the bore was left alone",
+                          PartFields.Get(tank, PPHollowModule, "innerDiameter"), 1f);
+        }
+
+        /// <summary>
+        /// Hard coupling: the bore holds and the stack is left mismatched.
+        /// </summary>
+        /// <remarks>
+        /// The collision cannot be reached by hand. ProceduralParts moves its own
+        /// controls' limits so the outer diameter's minimum is the bore plus the least
+        /// wall it allows, and forcing past that hands PP a shape its interface
+        /// forbids - it answers with ArgumentOutOfRangeException about volume. No
+        /// player can do it.
+        ///
+        /// It arises through propagation: a change walking the stack asks a hollow
+        /// tank to become narrower than its bore allows. Hard coupling lets it stop
+        /// short, and the craft shows a 1 m tank on a 2.01 m one. That is information
+        /// rather than damage - something did not fit, and it is visible where.
+        /// </remarks>
+        private static IEnumerator HollowHardHoldsTheBore(TestContext context)
+        {
+            var built = new Part[2];
+            yield return BuildHollowStack(context, PPTank, PPShapeModule, "diameter",
+                                          3f, 2f, 3f, built, "hard");
+            if (built[0] == null) yield break;
+
+            yield return context.Say("Taking the plain tank below from 3 m down to 1 m.",
+                                     "Hard coupling: the bore is 2 m and will not move, so the "
+                                     + "hollow tank can only follow as far as 2.01 m.");
+
+            PartFields.Set(built[1], PPShapeModule, "diameter", 1f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float outer = PartFields.Get(built[0], PPHollowModule, "outerDiameter");
+            float inner = PartFields.Get(built[0], PPHollowModule, "innerDiameter");
+            Harness.Log($"HOLLOW hard: neighbour 1.000, outer {outer:F4} inner {inner:F4}");
+
+            context.Check("the plain tank took the change",
+                          PartFields.Get(built[1], PPShapeModule, "diameter"), 1f);
+            context.Check("the bore did not move", inner, 2f, 0.02f);
+            context.CheckTrue($"and the outside stopped just clear of it ({outer:F3})",
+                              outer > 2f && outer < 2.1f);
+        }
+
+        /// <summary>
+        /// Soft coupling: the bore gives up exactly the room the outside needs.
+        /// </summary>
+        /// <remarks>
+        /// The same craft and the same edit as the hard scenario, so the pair of them
+        /// is the whole difference between the two modes. Soft has to act before the
+        /// write is clamped, because a clamped write reports the clamped value and
+        /// nothing afterwards can tell that anything was refused.
+        /// </remarks>
+        private static IEnumerator HollowSoftYieldsTheBore(TestContext context)
+        {
+            var built = new Part[2];
+            yield return BuildHollowStack(context, PPTank, PPShapeModule, "diameter",
+                                          3f, 2f, 3f, built, "soft");
+            if (built[0] == null) yield break;
+
+            yield return context.Say("The same edit again, with soft coupling.",
+                                     "The bore should drop out of the way so the outside can "
+                                     + "follow the stack all the way to 1 m.");
+
+            PartFields.Set(built[1], PPShapeModule, "diameter", 1f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float outer = PartFields.Get(built[0], PPHollowModule, "outerDiameter");
+            float inner = PartFields.Get(built[0], PPHollowModule, "innerDiameter");
+            Harness.Log($"HOLLOW soft: neighbour 1.000, outer {outer:F4} inner {inner:F4}");
+
+            context.Check("the plain tank took the change",
+                          PartFields.Get(built[1], PPShapeModule, "diameter"), 1f);
+            context.Check("the outside followed it all the way", outer, 1f, 0.05f);
+            // PP's own least wall is 0.01, so a 1.00 outside leaves a 0.99 bore.
+            // Checked as a number rather than a range: "somewhere inside" would pass
+            // just as happily on a bore that gave up twelve times the room it had to,
+            // which is exactly the bug this scenario caught.
+            context.Check("and the bore gave up exactly the least wall", inner, 0.99f, 0.02f);
+        }
+
+        /// <summary>Proportional coupling holds the ratio.</summary>
+        private static IEnumerator HollowProportionalKeepsTheFraction(TestContext context)
+        {
+            Part tank = BuildHollow(context, "proportional", 1f, 2f);
+            if (tank == null) yield break;
+            yield return context.Frames(6);
+
+            string why = ConvertToHollow(tank, 1f, 2f);
+            if (why != null) { context.Skip(why); yield break; }
+            EditorBuilder.SetRoot(tank);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+            EditorBuilder.LookDownAt(EditorBuilder.BodyCentreOf(tank));
+
+            yield return context.Say("Taking the outer diameter from 2 m to 3 m.",
+                                     "The bore was half the outside and should still be: 1.5 m.");
+
+            PartFields.Set(tank, PPHollowModule, "outerDiameter", 3f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            context.Check("the bore kept its fraction of the outside",
+                          PartFields.Get(tank, PPHollowModule, "innerDiameter"), 1.5f, 0.02f);
+        }
+
+        /// <summary>Constant coupling holds the wall.</summary>
+        private static IEnumerator HollowConstantKeepsTheWall(TestContext context)
+        {
+            Part tank = BuildHollow(context, "constant", 1f, 2f);
+            if (tank == null) yield break;
+            yield return context.Frames(6);
+
+            string why = ConvertToHollow(tank, 1f, 2f);
+            if (why != null) { context.Skip(why); yield break; }
+            EditorBuilder.SetRoot(tank);
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+            EditorBuilder.LookDownAt(EditorBuilder.BodyCentreOf(tank));
+
+            yield return context.Say("Taking the outer diameter from 2 m to 3 m.",
+                                     "The wall was 1 m across the diameters and should stay so: the "
+                                     + "bore follows to 2 m.");
+
+            PartFields.Set(tank, PPHollowModule, "outerDiameter", 3f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            context.Check("the bore moved by what the outside moved",
+                          PartFields.Get(tank, PPHollowModule, "innerDiameter"), 2f, 0.02f);
+        }
+
+        /// <summary>
+        /// Build a hollow tank with one neighbour stacked on top of it.
+        /// </summary>
+        /// <param name="context">The running scenario.</param>
+        /// <param name="neighbourName">The part to stack above.</param>
+        /// <param name="neighbourModule">Its dimension module.</param>
+        /// <param name="neighbourField">Its diameter field.</param>
+        /// <param name="neighbourSize">What to size it to.</param>
+        /// <param name="inner">The hollow tank's bore.</param>
+        /// <param name="outer">The hollow tank's outside.</param>
+        /// <param name="built">The hollow tank and the neighbour, in that order.</param>
+        private static IEnumerator BuildHollowStack(TestContext context, string neighbourName,
+                                                    string neighbourModule, string neighbourField,
+                                                    float neighbourSize, float inner, float outer,
+                                                    Part[] built, string mode = "hard")
+        {
+            built[0] = built[1] = null;
+            if (!PartFields.SetHollowMode(mode))
+            {
+                context.Skip($"could not set the hollow coupling mode to '{mode}' - "
+                             + "either DimensionSync is not loaded or it has no such mode");
+                yield break;
+            }
+
+            Part hollow = EditorBuilder.Spawn(PPTank);
+            Part neighbour = EditorBuilder.Spawn(neighbourName);
+            if (hollow == null || neighbour == null)
+            {
+                context.Skip($"could not spawn {PPTank} and {neighbourName}");
+                yield break;
+            }
+            yield return context.Frames(6);
+
+            string why = ConvertToHollow(hollow, inner, outer);
+            if (why != null) { context.Skip(why); yield break; }
+            PartFields.Set(neighbour, neighbourModule, neighbourField, neighbourSize,
+                           WriteMode.PartActionWindow);
+            yield return context.Frames(2);
+
+            // Hollow on TOP. Stacked underneath, its bore points down into the part
+            // below and the camera sees a plain cylinder; on top, the hole is the
+            // first thing anyone watching sees, which matters for a walkthrough.
+            EditorBuilder.SetRoot(neighbour);
+            if (!EditorBuilder.StackOnTop(neighbour, hollow))
+            {
+                context.Result.Error("could not stack the hollow tank on the neighbour");
+                yield break;
+            }
+            yield return context.Settled();
+            EditorBuilder.PresentShip();
+
+            // Down onto it from above. The hollow part is on top so its bore faces the
+            // sky, and a level camera shows a circle edge-on: from three-quarters up
+            // the hole is a hole.
+            EditorBuilder.LookDownAt(EditorBuilder.BodyCentreOf(hollow));
+
+            built[0] = hollow;
+            built[1] = neighbour;
+        }
+
+        /// <summary>A neighbour sized to the outside follows it.</summary>
+        private static IEnumerator HollowStackNeighbourMatchingTheOutsideFollows(TestContext context)
+        {
+            var built = new Part[2];
+            yield return BuildHollowStack(context, PPTank, PPShapeModule, "diameter", 2f, 1f, 2f, built);
+            if (built[0] == null) yield break;
+
+            yield return context.Say("Taking the hollow tank's outer diameter to 3 m.",
+                                     "The plain tank below it is 2 m, the same as the outside, so it "
+                                     + "should follow to 3 m.");
+
+            PartFields.Set(built[0], PPHollowModule, "outerDiameter", 3f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            context.Check("the neighbour followed the outside",
+                          PartFields.Get(built[1], PPShapeModule, "diameter"), 3f);
+        }
+
+        /// <summary>The same, with an RO tank as the neighbour.</summary>
+        private static IEnumerator HollowStackROTankMatchingTheOutsideFollows(TestContext context)
+        {
+            string roTank = ROTankPart();
+            if (roTank == null) { context.Skip("no ROTanks part installed"); yield break; }
+
+            var built = new Part[2];
+            yield return BuildHollowStack(context, roTank, ROModule, ROField, 2f, 1f, 2f, built);
+            if (built[0] == null) yield break;
+
+            // ROLib lengthens a tank when it widens, so the stack grows: budgeted
+            // before anything moves, as the other RO scenarios do.
+            EditorBuilder.WillEdit(built[0], growth: 2f);
+
+            yield return context.Say("Taking the hollow tank's outer diameter to 3 m.",
+                                     "The RO tank below is 2 m and should follow, across the boundary "
+                                     + "between two mods that share nothing but the joint.");
+
+            PartFields.Set(built[0], PPHollowModule, "outerDiameter", 3f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            context.Check("the RO tank followed the outside",
+                          PartFields.Get(built[1], ROModule, ROField), 3f);
+        }
+
+        /// <summary>A neighbour sized to the bore follows the bore.</summary>
+        /// <remarks>
+        /// Written the other way round first, pinning the gap while it existed, so
+        /// that closing it meant deliberately editing a test rather than finding out
+        /// later that something had changed underfoot.
+        /// </remarks>
+        private static IEnumerator HollowStackNeighbourMatchingTheBoreFollows(TestContext context)
+        {
+            var built = new Part[2];
+            yield return BuildHollowStack(context, PPTank, PPShapeModule, "diameter", 1f, 1f, 2f, built);
+            if (built[0] == null) yield break;
+
+            yield return context.Say("Taking the hollow tank's BORE from 1 m to 1.5 m.",
+                                     "The plain tank below is 1 m, the same as the bore, and was "
+                                     + "built to fit inside it. It should follow.");
+
+            PartFields.Set(built[0], PPHollowModule, "innerDiameter", 1.5f, WriteMode.PartActionWindow);
+            yield return context.Settled();
+
+            float neighbour = PartFields.Get(built[1], PPShapeModule, "diameter");
+            float outer = PartFields.Get(built[0], PPHollowModule, "outerDiameter");
+            Harness.Log($"HOLLOW bore-matched neighbour {neighbour:F4}, hollow outer {outer:F4}");
+
+            context.Check("the bore took the change",
+                          PartFields.Get(built[0], PPHollowModule, "innerDiameter"), 1.5f);
+            context.Check("the neighbour followed the bore", neighbour, 1.5f);
+
+            // The outside must not have come along. It was 2 m, matching nothing that
+            // changed, and a cross-channel match that ignored values would take it too.
+            context.Check("and the outside was left alone", outer, 2f, 0.02f);
         }
 
         /// <summary>
@@ -7251,6 +8590,7 @@ namespace DimensionSync.GameTests
             EditorBuilder.SetRoot(tank);
             yield return context.Settled();
             EditorBuilder.PresentShip();
+            EditorBuilder.LookDownAt(EditorBuilder.BodyCentreOf(tank));
 
             if (!PartActionWindow.Open(tank, out string why)) { context.Skip(why); yield break; }
             yield return context.Frames(30);
@@ -7456,6 +8796,7 @@ namespace DimensionSync.GameTests
             EditorBuilder.SetRoot(tank);
             yield return context.Settled();
             EditorBuilder.PresentShip();
+            EditorBuilder.LookDownAt(EditorBuilder.BodyCentreOf(tank));
 
             float lengthBefore = PartFields.Get(tank, ROModule, "currentLength");
 
@@ -7633,6 +8974,7 @@ namespace DimensionSync.GameTests
             EditorBuilder.SetRoot(tank);
             yield return context.Settled();
             EditorBuilder.PresentShip();
+            EditorBuilder.LookDownAt(EditorBuilder.BodyCentreOf(tank));
 
             float diameterBefore = PartFields.Get(tank, ROModule, ROField);
             float lengthBefore = PartFields.Get(tank, ROModule, "currentLength");
