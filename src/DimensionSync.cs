@@ -592,12 +592,14 @@ WingConformance.NotePlayerPlacements(_nodes, midChange: true);
                 // distinction nobody outside this file can see a reason for.
                 HollowCoupling.Couple(_nodes, _changes);
 
+
                 // Each changed field starts its own walk. Two fields can change in
                 // the same frame - a symmetry pair, or a hollow part's bore and
                 // outside together - and their runs are independent.
-                for (int i = 0; i < _changes.Count; i++)
+                int propagated = 0;
+                for (; propagated < _changes.Count; propagated++)
                 {
-                    DimensionChange change = _changes[i];
+                    DimensionChange change = _changes[propagated];
                     if (!_nodes.TryGetValue(change.Slot.Part, out KspDimensionNode origin)) continue;
 
                     if (Debug)
@@ -609,6 +611,28 @@ WingConformance.NotePlayerPlacements(_nodes, midChange: true);
                     if (changed > 0)
                         UnityEngine.Debug.Log($"{LogTag} synced {changed} field(s) to " +
                                               $"{change.NewValue:F4} from {change.Slot.Label}");
+                }
+
+                // Anything sitting inside a bore that has moved. Its own change is
+                // appended and walked in the same pass, so a plug that follows a bore
+                // still carries its neighbours with it.
+                int beforeNesting = _changes.Count;
+                NestedParts.Follow(_nodes, _changes);
+
+                // And couple again, for what nesting just moved - only for those. Coupling runs before
+                // the walks so a player's edit carries its partner outward, but a part
+                // resized BY the nesting rule has not been through it - and a hollow
+                // part nested in another has two relationships in sequence: its
+                // outside answers to the bore around it, and its own bore answers to
+                // its outside. Without this the first hop happened and the second did
+                // not, leaving a part whose wall had quietly changed thickness.
+                HollowCoupling.Couple(_nodes, _changes, from: beforeNesting);
+
+                for (; propagated < _changes.Count; propagated++)
+                {
+                    DimensionChange late = _changes[propagated];
+                    if (!_nodes.TryGetValue(late.Slot.Part, out KspDimensionNode from)) continue;
+                    _propagator.Propagate(from, late.Slot.Descriptor, late.OldValue, late.NewValue);
                 }
 
                 // Two joint rules that a value walk cannot express, run once the
