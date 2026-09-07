@@ -57,6 +57,9 @@ Hollow parts, and the fixes from a long test session against real craft.
   against where it actually is.
 - Where only one edge of a wing joint lines up, the offset is spent rather than
   the chord.
+- The shipped `DimensionSync.cfg` had `debug = true`, so every install logged
+  several lines per frame of editing into `KSP.log`. The readme had documented
+  the default as `false` throughout.
 
 ### Changed
 
