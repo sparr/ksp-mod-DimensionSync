@@ -17,7 +17,7 @@
          the .version file below, so bumping it here is the only edit a release
          needs. -->
     <PropertyGroup>
-        <Version>0.1.0</Version>
+        <Version>0.2.0</Version>
         <Product>DimensionSync</Product>
         <Authors>Clarence "Sparr" Risher</Authors>
         <Company>Clarence "Sparr" Risher</Company>

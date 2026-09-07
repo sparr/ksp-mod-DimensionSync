@@ -8,6 +8,10 @@ changed part was *before* the change. Change a procedural wing's tip chord and
 the next segment outboard takes it as its root chord. Stock parts, radially
 attached parts and anything the player cannot edit are left alone.
 
+Hollow parts are understood: a bore and an outside diameter can follow one
+another, a stack can be matched to either, and a part slid inside another's bore
+keeps its clearance when either of them is resized.
+
 Out of the box it knows about ProceduralParts, ROLib (RO-Tanks and friends),
 Procedural Fairings, SSTU and B9 Procedural Wings; anything else can be added
 from config.
@@ -24,6 +28,27 @@ mods this exists to work with frequently assign their fields directly, and those
 changes are invisible to the event. Polling sees every route into the field
 whichever mod took it, and a change is picked up on the same frame the part
 action window applied it.
+
+**Other mods are also asked what they changed.** Polling sees that a field moved
+but not who moved it, and cannot tell a player reaching for a slider from
+another mod writing the same field a frame later - which is the difference
+between
+leaving a part where somebody put it and rearranging it. The number that settles
+it is what the field held *before* the other mod wrote it, and by the time a
+watcher notices, nothing anywhere remembers.
+
+Surveying the mods that account for nearly all the parts this targets turned up
+one seam rather than four: ProceduralParts, ROLib and stock all write their
+counterparts through KSP's own `BaseField.SetValue`, so one hook covers all
+three, and a mod nobody here has heard of is likely covered already. B9
+Procedural Wings needs a second hook only because it bypasses that seam - it
+assigns the backing field and its own cache together, so the counterpart never
+experiences a change at all.
+
+This needs Harmony, which some installs have and some do not, so it is entirely
+optional: everything is reflection, no assembly is referenced, and without
+Harmony the stock-variant source still works, the rest report nothing, and the
+mod behaves exactly as it did before.
 
 **Writes go through the part action window's own protocol.** Setting a
 neighbour's diameter reproduces `UIPartActionFieldItem.SetFieldValue` step for
@@ -54,11 +79,21 @@ meet.
 
 At each part the walk applies the new value to every field on the same *channel*
 that still holds the pre-change value, then carries on out of the ends those
-fields describe. Channels keep unrelated quantities apart: a hollow part's bore
-never picks up its outside diameter, and a wing's thickness never lands on its
-chord. So a cone with equal ends behaves as part of a uniform stack and passes
-the change through, while a cone with a different far end absorbs it and stops -
-and the same rule makes a constant-chord wing run carry a change all the way out
+fields describe. Channels keep unrelated quantities apart: a wing's thickness
+never lands on its chord.
+
+A bore and an outside diameter are the deliberate exception - they match each
+other, because a plug built to fit a bore is as ordinary as one built to fit an
+outside. Inside a single part they still cannot, and nothing has to be added to
+stop them: the walk writes only fields that *still hold the pre-change value*,
+and a part's bore and its outside are never the same number. The match therefore
+only bites across a joint, where the neighbour really was built to that size.
+Making a part's own two diameters follow one another is a separate rule with its
+own setting - see [Hollow parts](#hollow-parts).
+
+So a cone with equal ends behaves as part of a uniform stack and passes the
+change through, while a cone with a different far end absorbs it and stops - and
+the same rule makes a constant-chord wing run carry a change all the way out
 while a tapered segment absorbs it. If a field clamps the value, because its
 editor control has a smaller range, propagation stops there too.
 
@@ -75,6 +110,30 @@ surface.
 Sweep offsets are understood but off by default: they pair as equal and opposite
 across a joint (`mirrored`), which is a shape decision rather than a fit-up
 requirement.
+
+**Hollow parts.** Two relationships here are not "two fields holding the same
+number", so neither is a channel. Both answer to `hollowCoupling`.
+
+*A part's own two diameters.* The bore and the outside describe one wall from
+opposite sides and are never equal, so one can never be propagated onto the
+other. They are coupled within the part instead, and what that produces is fed
+back into the walk, so it travels out to the neighbours exactly as a player's
+edit does. A hollow cone keeps each end's pair separate: its top bore answers to
+its top outside, not to its bottom.
+
+*A part nested inside another's bore.* A part slid into a bore is deliberately
+*smaller* than it - the clearance is the point - so again the walk can never
+carry a change between them; what has to be preserved is the relationship. It
+reads from either end: move the bore and the part inside follows, resize the
+part and the bore makes room. Two parts count as nested when the smaller lies
+inside
+the bore and one of the **four** end-plane pairings is flush - both ends of each
+part against both ends of the other. A part can be turned end for end about its
+joint, so the same face still touches while its opposite end points down the
+bore, and it can be slid until its far face lines up with its host's far face; a
+rule looking only at the face they were attached by would miss both. They need
+not share an axis, and they do not need matching diameters - the coplanar
+surface is the whole criterion.
 
 ## Configuration
 
@@ -124,6 +183,7 @@ entry is silently ignored.
 | `debug` | `false` | Log every tracked field and propagation step. |
 | `tolerance` | `0.01` | How far apart two parts may be and still count as the same size, as a fraction of the larger. |
 | `marginMode` | `none` | What to do about a neighbour that was near but not exactly equal: `none`, `absolute` or `proportional`. |
+| `hollowCoupling` | `hard` | How a bore follows the outside around it, and how a nested part follows the bore around it: `hard`, `soft`, `proportional` or `constant`. |
 | `changeEpsilon` | `0.0001` | The smallest movement in a field that counts as a change at all. |
 | `passThroughRigidParts` | `false` | When true, a part with nothing on the channel being propagated does not stop the walk. |
 | `matchControlSurfaceSweep` | `true` | Keep a control surface's sweep matched to the wing carrying it. |
@@ -151,6 +211,46 @@ next to a 3.02 m one, taking the 3.00 to 6.00:
 Every part in a run measures its own gap against the part that actually changed,
 not against whichever neighbour was adjusted just before it, so margins do not
 compound along a stack.
+
+### Hollow parts
+
+`hollowCoupling` decides two things at once: how a part's bore follows its own
+outside, and how a nested part follows the bore around it. They are the same
+question asked about two surfaces, so they take the same answer.
+
+| mode | a bore, as the outside moves | a nested part, as the bore moves |
+| --- | --- | --- |
+| `hard` | never moves; a change that will not fit around it stops short | never moves |
+| `soft` | gives up exactly the room the outside needs, and no more | moves only once it no longer fits, and only just enough |
+| `proportional` | stays the same fraction of the outside | stays the same fraction of the bore |
+| `constant` | the wall keeps its thickness | the clearance keeps its size |
+
+`hard` is the default because it is the only one that never changes a number
+nobody asked about. A stack change the bore refuses leaves the craft visibly
+mismatched - a 1.00 m tank sitting on a 2.01 m one - and that is information
+rather than damage: something you asked for did not fit, and you can see exactly
+where. `soft` makes the same promise for every change that *does* fit, and
+differs only where `hard` would stop short: taking that same tank down to 1.00 m
+drops its bore to 0.99, so the stack matches.
+
+The two proportional-style modes are for shapes rather than fit-up, and they move
+the second surface on every edit whether or not anything was in the way.
+
+`soft` is worth distinguishing from `constant` on nested parts, because they look
+alike until the bore gets tight. With a 1.500 m part inside a 2.500 m bore, taken
+down to 2.000 m:
+
+| `hollowCoupling` | the nested part becomes | |
+| --- | --- | --- |
+| `hard` | 1.500 | untouched; it still fits |
+| `soft` | 1.500 | untouched; it still fits |
+| `proportional` | 1.200 | the same fraction of the bore |
+| `constant` | 1.000 | the same 1.000 m of clearance |
+
+Take that bore to 1.200 instead and `soft` finally acts, putting the part at
+1.190 - just inside - where `hard` leaves it sticking through.
+
+This is the one setting the in-game window does not yet offer; it is config only.
 
 **Straight edges.** Whether a dimension crosses a joint is normally decided by
 the two parts being the same size, which is right for a stack of tanks and wrong
@@ -249,10 +349,24 @@ The build assembles the whole releasable mod folder under `GameData/DimensionSyn
 the DLL into `Plugins/`, the licence, readme and changelog copied up from the
 repository root, and `DimensionSync.version` rewritten with the current version.
 
-Releasing is `<Version>` in `src/DimensionSync.csproj`, a build, a `CHANGELOG.md`
-entry, and a GitHub release whose zip contains the `GameData` folder. The
-`.version` file and `NetKAN/DimensionSync.netkan` between them let KSP-AVC and
-CKAN pick the release up without further work.
+Releasing, in order:
+
+1. `<Version>` in `src/DimensionSync.csproj`. It drives the assembly attributes
+   and rewrites `DimensionSync.version` at build time, so nothing else needs the
+   number typed into it.
+2. A `CHANGELOG.md` entry, and a matching `VERSION` block at the top of
+   `GameData/DimensionSync/changelog.cfg`. The second is what Kerbal Changelog
+   shows in game; the two are maintained by hand and drift silently if only one
+   is updated.
+3. `dotnet build src/DimensionSync.csproj`, which assembles the whole releasable
+   folder under `GameData/DimensionSync` - the DLL into `Plugins/`, and the
+   licence, readme and changelog copied up from the repository root.
+4. The full suite, green.
+5. A git tag, and a GitHub release whose zip contains the `GameData` folder.
+
+The `.version` file and `NetKAN/DimensionSync.netkan` between them let KSP-AVC
+and CKAN pick the release up without further work. `release_status` in the netkan
+is the one thing that says how finished this is, and is still `development`.
 
 ## Tests
 
@@ -264,12 +378,19 @@ DS_DISPLAY=:0 pytest test/integration                 # drives a real KSP instal
 The unit tests compile the game-independent half of the mod against a fake part
 graph and cover the propagation rules directly.
 
-The integration tests build stacks of real ProceduralParts, ROLib and Procedural
-Fairings parts in a headless VAB, change one diameter the way the part action
-window would, and check what happened to the neighbours - including whether the
-neighbour's *mesh* was rebuilt, not just its KSPField overwritten. They need a
-one-time `test/integration/setup_testenv.sh`; see
+The integration tests build stacks of real ProceduralParts, ROLib, Procedural
+Fairings and B9 parts in a headless VAB and change them the way a player would -
+through the part action window's own numeric boxes, through B9's window, and by
+dragging the offset gizmo with synthetic mouse input - then check what happened
+to the neighbours, including whether the neighbour's *mesh* was rebuilt and not
+merely its KSPField overwritten. Ninety-nine scenarios, about fourteen minutes.
+They need a one-time `test/integration/setup_testenv.sh`; see
 [test/integration/README.md](test/integration/README.md).
+
+`DS_ONLY=substring,substring` narrows a run to matching scenarios, and
+`DS_KSP_DIR=/path/to/KSP` runs against a copy of the install - two runs sharing
+one install destroy each other's evidence, and the result is a run that quietly
+did not happen rather than one that fails.
 
 `DS_DISPLAY=:0 test/integration/walkthrough.sh` runs the same scenarios in a
 visible KSP window, pausing before each operation to explain what is about to

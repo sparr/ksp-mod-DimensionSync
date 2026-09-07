@@ -6,6 +6,60 @@ All notable changes to DimensionSync are recorded here. This project follows
 
 ## [Unreleased]
 
+## [0.2.0]
+
+Hollow parts, and the fixes from a long test session against real craft.
+
+### Added
+
+- Hollow parts: a part's bore and its outside diameter can follow one another,
+  under `hollowCoupling` - `hard` (the default; the bore never moves and a change
+  that will not fit around it stops short), `soft` (the bore gives up exactly the
+  room the outside needs and no more), `proportional` (the bore stays the same
+  fraction of the outside) or `constant` (the wall keeps its thickness). A hollow
+  cone keeps each end's pair separate.
+- A bore and an outside diameter now match each other across a joint, so a stack
+  can be built to either: a plug sized to the tank above it follows when that
+  tank's bore moves. Within a single part they still cannot set one another,
+  because the walk only writes fields that still hold the pre-change value and a
+  part's two diameters are never equal.
+- Nested parts: a part slid inside another's bore keeps its clearance when either
+  of them is resized, under the same four `hollowCoupling` modes. It reads from
+  either end - move the bore and the part inside follows, resize the part and the
+  bore makes room. Nesting is recognised from any of the four end-plane pairings
+  being flush, so a part turned end for end about its joint or slid until its far
+  face lines up with its host's far face still counts; the two need neither a
+  shared axis nor matching diameters.
+- Other mods are asked what they changed, rather than it being inferred from the
+  fields afterwards, which recovers the value a field held *before* somebody else
+  wrote it. One hook on KSP's own `BaseField.SetValue` covers ProceduralParts,
+  ROLib and stock; B9 Procedural Wings gets a second because it bypasses that
+  seam. Needs Harmony, and is entirely optional - without it the mod behaves
+  exactly as it did before.
+
+### Fixed
+
+- A mirrored pair of control surfaces drifted 0.0625 m apart along otherwise
+  identical wings whenever their parent wing was shortened. Two rules disagreed
+  about what the surface measured before the edit began: on the mirrored side B9
+  had already written the new length and its own cache together, so that side's
+  anchor saw a flap that had never changed length while its hinge saw the full
+  change. Neither side ever ran both rules.
+- A control surface is refitted when its wing's thickness changes, and kept
+  coplanar through a change to its parent's span.
+- A control surface's edge is remembered rather than re-derived, so it stays on
+  the edge it was placed on.
+- A player's move is adopted before the rules run, and KSP's stored offset is
+  updated when that move is accepted, so a part the player positioned is judged
+  against where it actually is.
+- Where only one edge of a wing joint lines up, the offset is spent rather than
+  the chord.
+
+### Changed
+
+- `hollowCoupling` is read from `DimensionSync.cfg` only; the in-game settings
+  window does not offer it yet.
+
 ## [0.1.0]
 
 First working release.
