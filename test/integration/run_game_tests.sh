@@ -14,6 +14,16 @@
 # install (it is under 200 MB) and point DS_KSP_DIR at it.
 set -euo pipefail
 
+# Every early exit below leaves no report, and a caller counting passes in this
+# output then reads "0 passed, 0 failed" - which looks like a suite that ran and
+# found nothing rather than one that never started. This fires on any non-zero
+# exit, including the ones set -e takes for us.
+finish() {
+    local rc=$?
+    (( rc == 0 )) || echo "==> RUN DID NOT COMPLETE (exit $rc). No count of passes in this output means anything." >&2
+}
+trap finish EXIT
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 ksp="${DS_KSP_DIR:-$root/testenv/KSP}"
@@ -38,8 +48,15 @@ if [[ ! -x "$ksp/KSP.x86_64" ]]; then
 fi
 
 echo "==> building"
-dotnet build "$root/src/DimensionSync.csproj" -v quiet --nologo
-dotnet build "$root/test/DimensionSync.GameTests/DimensionSync.GameTests.csproj" -v quiet --nologo
+if ! dotnet build "$root/src/DimensionSync.csproj" -v quiet --nologo; then
+    echo "BUILD FAILED: the mod did not compile. KSP was never started." >&2
+    exit 4
+fi
+if ! dotnet build "$root/test/DimensionSync.GameTests/DimensionSync.GameTests.csproj" -v quiet --nologo; then
+    echo "BUILD FAILED: the test harness did not compile. KSP was never started." >&2
+    echo "The deployed harness is now older than the source; do not read a run against it." >&2
+    exit 4
+fi
 
 echo "==> deploying"
 mkdir -p "$ksp/GameData/DimensionSync/Plugins"
@@ -146,12 +163,25 @@ fi
 python3 - "$results" <<'PY'
 import json, sys
 report = json.load(open(sys.argv[1]))
-bad = 0
+counts = {}
 for s in report["scenarios"]:
     print(f"{s['status']:8} {s['name']}")
     for m in s["messages"]:
         print(f"         {m}")
-    if s["status"] in ("failed", "error"):
-        bad += 1
+    counts[s["status"]] = counts.get(s["status"], 0) + 1
+
+# Nothing ran, so there is nothing to summarise - and printing "0 passed" here
+# would hand back the very string this is meant to stop being believed.
+if not counts:
+    print("EMPTY REPORT: no scenario ran at all. If DS_ONLY is set it matched nothing.",
+          file=sys.stderr)
+    sys.exit(2)
+
+# The one line worth reading, produced by the thing that knows the answer. Its
+# absence is then a signal in itself: a run that died has no summary at all,
+# where a caller doing its own counting would have printed a confident nought.
+passed, skipped = counts.get("passed", 0), counts.get("skipped", 0)
+bad = counts.get("failed", 0) + counts.get("error", 0)
+print(f"==> {passed} passed, {bad} failed, {skipped} skipped")
 sys.exit(1 if bad else 0)
 PY
