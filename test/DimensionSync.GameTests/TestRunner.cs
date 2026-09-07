@@ -437,7 +437,12 @@ namespace DimensionSync.GameTests
                 // where a click means "pick that part up".
                 Harness.Log($"editor FSM state: {EditorBuilder.CurrentEditorState()}");
 
-                _ui?.BeginScenario(i + 1, scenarios.Count, scenario.Name, scenario.Explain);
+                // The neighbours by name as well, so the panel can offer them for
+                // copying: after something looks wrong, the two scenarios either side
+                // are usually what you want to run next.
+                _ui?.BeginScenario(i + 1, scenarios.Count, scenario.Name, scenario.Explain,
+                                   i > 0 ? scenarios[i - 1].Name : null,
+                                   i + 1 < scenarios.Count ? scenarios[i + 1].Name : null);
                 while (_ui != null && _ui.Waiting) yield return null;
 
                 IEnumerator body = null;

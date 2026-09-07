@@ -38,6 +38,12 @@ namespace DimensionSync.GameTests
         private string _heading = "";
         private string _detail = "";
         private string _scenario = "";
+
+        /// <summary>The current scenario's bare name, for copying.</summary>
+        private string _name = "";
+
+        /// <summary>The scenario before this one, and the one after.</summary>
+        private string _previousName, _nextName;
         private readonly List<string> _notes = new List<string>();
         private Vector2 _scroll;
 
@@ -72,9 +78,13 @@ namespace DimensionSync.GameTests
         public bool SkipRequested { get; private set; }
 
         /// <summary>Start a new scenario: clear the previous one's notes and skip flag.</summary>
-        public void BeginScenario(int index, int count, string name, string explain)
+        public void BeginScenario(int index, int count, string name, string explain,
+                                  string previousName = null, string nextName = null)
         {
             _scenario = $"{index}/{count}  {name}";
+            _name = name;
+            _previousName = previousName;
+            _nextName = nextName;
             _previous = null;
             Number = index;
             Count = count;
@@ -110,6 +120,61 @@ namespace DimensionSync.GameTests
         }
 
         /// <summary>Add a line to the running commentary for the current scenario.</summary>
+        /// <summary>
+        /// Buttons that put a name on the clipboard, for pasting into DS_ONLY.
+        /// </summary>
+        /// <remarks>
+        /// Names are what the filter takes, and reading one off the screen and typing
+        /// it back is exactly the kind of transcription that produces a run of the
+        /// wrong thing. The previous and next entries are the scenarios either side,
+        /// so somewhere in the middle of a walkthrough you can take the two that
+        /// bracket whatever just looked wrong.
+        ///
+        /// "Next step" is the heading currently on screen, which is worth stating
+        /// because it took being corrected to see it. Prompt is called BEFORE a step
+        /// runs - it announces what is about to happen and then waits - so while the
+        /// panel is up, its heading names the step that has not happened yet, and
+        /// _previous names the one that has. I read _heading as "the current step" and
+        /// concluded a next-step button was impossible; it was already on the screen.
+        /// </remarks>
+        private void DrawCopyRow()
+        {
+            GUILayout.Space(4f);
+            GUILayout.Label("Copy to clipboard");
+
+            GUILayout.BeginHorizontal();
+            CopyButton("this test", _name);
+            CopyButton("prev test", _previousName);
+            CopyButton("next test", _nextName);
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            CopyButton("prev step", _previous);
+            CopyButton("next step", _heading);
+            GUILayout.EndHorizontal();
+
+            if (!string.IsNullOrEmpty(_copied))
+                GUILayout.Label($"copied: {_copied}");
+        }
+
+        /// <summary>One clipboard button, disabled when there is nothing to copy.</summary>
+        /// <param name="label">What the button says.</param>
+        /// <param name="value">What it copies, or null to grey it out.</param>
+        private void CopyButton(string label, string value)
+        {
+            bool has = !string.IsNullOrEmpty(value);
+            GUI.enabled = has;
+            if (GUILayout.Button(label) && has)
+            {
+                GUIUtility.systemCopyBuffer = value;
+                _copied = value;
+            }
+            GUI.enabled = true;
+        }
+
+        /// <summary>The last thing copied, echoed so the click is visibly acknowledged.</summary>
+        private string _copied;
+
         public void Note(string note) => _notes.Add(note);
 
         /// <summary>
@@ -219,7 +284,13 @@ namespace DimensionSync.GameTests
             if (GUILayout.Button("Next test") && ready) { SkipRequested = true; Continue(); }
             if (GUILayout.Button("Run the rest") && ready) { AutoRun = true; Continue(); }
             if (GUILayout.Button("Stop") && ready) { Aborted = true; Continue(); }
+
             GUILayout.EndHorizontal();
+
+            // AFTER the row above is closed. Called inside it, its own horizontal
+            // groups nested inside that one and everything laid out on a single line -
+            // which widens the window to fit and squeezes the labels.
+            DrawCopyRow();
 
             DrawJumpTo(ready);
             GUI.enabled = true;
