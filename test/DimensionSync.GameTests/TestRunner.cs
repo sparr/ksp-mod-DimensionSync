@@ -396,8 +396,56 @@ namespace DimensionSync.GameTests
                 });
                 Harness.Log($"-dstest-only '{Harness.Only}' left {scenarios.Count} scenario(s)");
             }
-            for (int i = 0; i < scenarios.Count; i++)
+            for (int i = 0; ; i++)
             {
+                // Running out of scenarios is not the same as being finished with
+                // them. The panel is still on screen and its jump box still works, so
+                // somebody who wants another look at what just went past can have one.
+                // Before this the loop simply ended: the jump set its flag and there
+                // was nothing left running to act on it, so the panel took the click,
+                // stopped waiting, and greyed itself out for good.
+                if (i >= scenarios.Count)
+                {
+                    // Written before the player is told the run is over, so what is on
+                    // disk always matches what has been run - including after a
+                    // scenario is revisited from here. The call after the loop writes
+                    // the same file again; it is there for the paths that leave early.
+                    WriteReport();
+                    // AutoRun means the player already said to stop asking.
+                    if (!Harness.KeepOpen || _ui == null || _ui.AutoRun) break;
+
+                    _ui.Prompt("Walkthrough finished",
+                               $"{_results.Count} scenario(s) run. The report has been "
+                               + "written and the game is left running. Jump to a "
+                               + "scenario, or run the last one again.");
+                    while (_ui.Waiting) yield return null;
+
+                    // Stop is the only way out. Anything else either goes somewhere or
+                    // puts this prompt back up: the buttons that have nowhere to go at
+                    // the end of a list should re-arm the panel, not kill it, which was
+                    // the whole complaint about arriving here.
+                    if (_ui.Aborted || _ui.AutoRun) break;
+
+                    // "Run again" here means the scenario just watched, which is the
+                    // one the panel is still naming.
+                    if (_ui.RerunRequested)
+                    {
+                        _ui.RerunRequested = false;
+                        _ui.SkipToScenario = _ui.Number;
+                    }
+                    if (_ui.SkipToScenario <= 0)
+                    {
+                        i = scenarios.Count - 1;   // the increment lands back here
+                        yield return null;
+                        continue;
+                    }
+
+                    // Land one short and let the loop's own increment arrive, which is
+                    // how the backwards jump above works too.
+                    i = _ui.SkipToScenario - 2;
+                    continue;
+                }
+
                 Scenario scenario = scenarios[i];
 
                 // Jumping: everything between here and the target is passed over
@@ -515,14 +563,10 @@ namespace DimensionSync.GameTests
                 yield return null;
             }
 
+            // Reached by the paths that leave the loop early - the player pressing
+            // Stop, most of all - where nothing has written the report yet.
             WriteReport();
-
-            if (Harness.KeepOpen)
-            {
-                _ui?.Prompt("Walkthrough finished", $"{_results.Count} scenario(s) run. " +
-                            "The report has been written; the game is left running.");
-                yield break;
-            }
+            if (Harness.KeepOpen) yield break;
 
             Harness.Log("done, quitting");
             yield return null;
