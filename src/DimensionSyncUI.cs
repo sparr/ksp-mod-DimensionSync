@@ -183,6 +183,28 @@ namespace DimensionSync
             DrawMarginChoice("Keep its size", MarginMode.Absolute, "neighbour lands on 6.02 m");
 
             GUILayout.Space(6f);
+            GUILayout.Label("<b>Hollow parts</b>");
+            GUILayout.Label(
+                "How a bore follows the outside around it, and how a part nested "
+                + "inside a bore follows that bore. Taking a 3.00 m tank with a "
+                + "2.00 m bore up to 6.00 m:",
+                HighLogic.Skin.label);
+            DrawHollowChoice("Leave the bore alone", HollowMode.HardIndependent,
+                             "bore stays 2.00 m");
+            DrawHollowChoice("Move the bore only when it must", HollowMode.SoftIndependent,
+                             "bore stays 2.00 m");
+            DrawHollowChoice("Keep the bore in proportion", HollowMode.Proportional,
+                             "bore goes to 4.00 m");
+            DrawHollowChoice("Keep the wall thickness", HollowMode.Constant,
+                             "bore goes to 5.00 m");
+            GUILayout.Label(
+                "<i>The first two differ only when a change will not fit. Taking that "
+                + "same tank down to 1.00 m, the first stops the outside at 2.01 m and "
+                + "leaves the stack mismatched; the second drops the bore to 0.99 m so "
+                + "the outside can go where it was sent.</i>",
+                HighLogic.Skin.label);
+
+            GUILayout.Space(6f);
             GUILayout.Label("<b>Wings</b>");
             DrawToggle(ref DimensionSettings.MatchControlSurfaceSweep,
                        "Match control surface sweep",
@@ -215,6 +237,20 @@ namespace DimensionSync
             if (GUILayout.Toggle(selected, $" {label}  <i>({example})</i>") && !selected)
             {
                 DimensionSettings.Margin = mode;
+                DimensionSettings.Save();
+            }
+        }
+
+        /// <summary>One radio-style row of the hollow coupling choice.</summary>
+        /// <param name="label">What the mode is called in the window.</param>
+        /// <param name="mode">The mode this row selects.</param>
+        /// <param name="example">A worked example, shown beside the label.</param>
+        private void DrawHollowChoice(string label, HollowMode mode, string example)
+        {
+            bool selected = DimensionSettings.Hollow == mode;
+            if (GUILayout.Toggle(selected, $" {label}  <i>({example})</i>") && !selected)
+            {
+                DimensionSettings.Hollow = mode;
                 DimensionSettings.Save();
             }
         }

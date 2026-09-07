@@ -18,7 +18,8 @@
     "suggests": [
         { "name": "ProceduralParts" },
         { "name": "ProceduralFairings" },
-        { "name": "B9-PWings-Fork" }
+        { "name": "B9-PWings-Fork" },
+        { "name": "Harmony2" }
     ],
     "install": [
         {

@@ -36,6 +36,9 @@ Hollow parts, and the fixes from a long test session against real craft.
   ROLib and stock; B9 Procedural Wings gets a second because it bypasses that
   seam. Needs Harmony, and is entirely optional - without it the mod behaves
   exactly as it did before.
+- `hollowCoupling` on the in-game settings window, with worked examples, beside
+  the margin and wing settings. What you pick there is saved to
+  `PluginData/Settings.cfg` like the rest.
 
 ### Fixed
 
@@ -57,8 +60,10 @@ Hollow parts, and the fixes from a long test session against real craft.
 
 ### Changed
 
-- `hollowCoupling` is read from `DimensionSync.cfg` only; the in-game settings
-  window does not offer it yet.
+- The settings window's wing section is described correctly in the readme as four
+  toggles rather than two.
+- CKAN now suggests Harmony, which the foreign-write hooks use when it is
+  present.
 
 ## [0.1.0]
 

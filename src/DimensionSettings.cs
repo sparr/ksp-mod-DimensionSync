@@ -159,11 +159,10 @@ namespace DimensionSync
             LoadPlayerChoices();
         }
 
-        /// <summary>Turn a config spelling of a margin mode into the enum.</summary>
-        /// <returns>False for anything unrecognised, leaving the caller's value alone.</returns>
         /// <summary>Read a hollow coupling mode from config.</summary>
         /// <param name="text">The configured word, or null.</param>
         /// <param name="mode">The mode it names.</param>
+        /// <returns>False for anything unrecognised, leaving the caller's value alone.</returns>
         private static bool TryParseHollow(string text, out HollowMode mode)
         {
             switch ((text ?? string.Empty).Trim().ToLowerInvariant())
@@ -176,6 +175,27 @@ namespace DimensionSync
                 case "proportional": mode = HollowMode.Proportional; return true;
                 case "constant": mode = HollowMode.Constant; return true;
                 default: mode = HollowMode.HardIndependent; return false;
+            }
+        }
+
+        /// <summary>Turn a config spelling of a margin mode into the enum.</summary>
+        /// <returns>False for anything unrecognised, leaving the caller's value alone.</returns>
+        /// <summary>The config spelling of a hollow coupling mode.</summary>
+        /// <remarks>
+        /// Written out by hand rather than through ToString, because these enum
+        /// members are not named for the words config uses - "hard" is
+        /// HardIndependent - and a round trip through ToString would write a word
+        /// that TryParseHollow then refuses, silently resetting the player's choice
+        /// to the default on the next load.
+        /// </remarks>
+        private static string HollowWord(HollowMode mode)
+        {
+            switch (mode)
+            {
+                case HollowMode.SoftIndependent: return "soft";
+                case HollowMode.Proportional: return "proportional";
+                case HollowMode.Constant: return "constant";
+                default: return "hard";
             }
         }
 
@@ -215,6 +235,8 @@ namespace DimensionSync
                 KeepWingEdgesStraight = straight;
             if (float.TryParse(node.GetValue("tolerance") ?? "", out float tolerance) && tolerance > 0f)
                 MatchTolerance = tolerance;
+            if (TryParseHollow(node.GetValue("hollowCoupling"), out HollowMode hollow))
+                Hollow = hollow;
         }
 
         /// <summary>
@@ -239,6 +261,7 @@ namespace DimensionSync
                 node.AddValue("anchorSpanChanges", AnchorSpanChanges);
                 node.AddValue("alignWingJoints", AlignWingJoints);
                 node.AddValue("keepWingEdgesStraight", KeepWingEdgesStraight);
+                node.AddValue("hollowCoupling", HollowWord(Hollow));
 
                 var file = new ConfigNode();
                 file.AddNode(node);

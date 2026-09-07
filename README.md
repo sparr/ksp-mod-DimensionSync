@@ -191,8 +191,9 @@ entry is silently ignored.
 | `alignWingJoints` | `true` | Move a wing segment back onto the tip of the segment inboard of it when that one is swept or lengthened. |
 | `keepWingEdgesStraight` | `true` | Carry a chord change through a run of wing segments whose edges form one straight line. |
 
-**In game.** `marginMode`, `tolerance` and the two wing settings can also be
-changed from the DimensionSync button on the editor toolbar. What you choose
+**In game.** `marginMode`, `tolerance`, `hollowCoupling` and the four wing
+settings can also be changed from the DimensionSync button on the editor
+toolbar. What you choose
 there is saved to `GameData/DimensionSync/PluginData/Settings.cfg` and takes
 precedence over `DimensionSync.cfg`; the other settings stay where config puts
 them, so a ModuleManager patch controlling one cannot be overridden by mistake.
@@ -250,7 +251,7 @@ down to 2.000 m:
 Take that bore to 1.200 instead and `soft` finally acts, putting the part at
 1.190 - just inside - where `hard` leaves it sticking through.
 
-This is the one setting the in-game window does not yet offer; it is config only.
+Also on the in-game window, with the same worked examples.
 
 **Straight edges.** Whether a dimension crosses a joint is normally decided by
 the two parts being the same size, which is right for a stack of tanks and wrong
