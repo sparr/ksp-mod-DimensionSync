@@ -226,22 +226,46 @@ namespace DimensionSync.Tests
         }
 
         /// <summary>
-        /// Channels are checked before values, so a bore change cannot land on a
-        /// neighbour's outside diameter that coincidentally holds the same number.
+        /// A neighbour built to fit a bore follows that bore.
         /// </summary>
+        /// <remarks>
+        /// This asserted the opposite until hollow parts were supported, on the
+        /// reasoning that a bore and an outside are different channels and a shared
+        /// number between them is a coincidence. It is not: a plug sized to the tank
+        /// above it was built to that size deliberately, and a part following the
+        /// size it was built to is the whole premise of every other channel here.
+        /// </remarks>
         [Fact]
-        public void InnerChangeDoesNotTouchAnOuterDiameterOfTheSameSize()
+        public void AnOutsideBuiltToABoreFollowsThatBore()
         {
             var a = new FakeNode("a");
             a.Add(Fake.OuterDiameter, 2f);
             a.Add(Fake.InnerDiameter, 1f);
             var b = new FakeNode("b");
-            b.Add(Fake.OuterDiameter, 1f);      // same number as a's inner diameter
+            b.Add(Fake.OuterDiameter, 1f);      // a plug sized to a's bore
             Fake.Stack(a, b);
 
             Change(NewPropagator(), a, "innerDiameter", 0.5f);
 
-            Assert.Equal(1f, b.Slot("outerDiameter").Value, 4);
+            Assert.Equal(0.5f, b.Slot("outerDiameter").Value, 4);
+        }
+
+        /// <summary>
+        /// Letting the two channels match does not let a part's bore write its own
+        /// outside. Nothing forbids it: the walk writes only fields that still hold
+        /// the pre-change value, and a hollow part's two diameters are never equal.
+        /// Coupling them is a separate rule with its own setting.
+        /// </summary>
+        [Fact]
+        public void ABoreChangeLeavesItsOwnPartsOutsideAlone()
+        {
+            var a = new FakeNode("a");
+            a.Add(Fake.OuterDiameter, 2f);
+            a.Add(Fake.InnerDiameter, 1f);
+
+            Change(NewPropagator(), a, "innerDiameter", 0.5f);
+
+            Assert.Equal(2f, a.Slot("outerDiameter").Value, 4);
         }
 
         /// <summary>

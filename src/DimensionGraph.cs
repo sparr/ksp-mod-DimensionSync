@@ -356,10 +356,32 @@ namespace DimensionSync
         /// <summary>
         /// Whether two dimensions describe the same quantity travelling over the
         /// same kind of joint - the test that keeps a wing's chord out of its
-        /// thickness and a tank's bore out of its outside diameter.
+        /// thickness.
         /// </summary>
-        private static bool SameChannel(DimensionDescriptor a, DimensionDescriptor b) =>
-            string.Equals(a.Channel, b.Channel, StringComparison.Ordinal) && (a.Link & b.Link) != 0;
+        /// <remarks>
+        /// With one exception, added deliberately. A bore and an outside diameter are
+        /// both a circle around the same axis, and a part can be built to fit either:
+        /// a plug sized to the bore of the tank above it is as ordinary as a tank
+        /// sized to its outside. So the two channels match each other.
+        ///
+        /// What keeps that from running wild is the test the caller applies straight
+        /// afterwards - a change carries through a part only while its value is still
+        /// the one that changed. Inside a single hollow part the bore and the outside
+        /// are never equal, so this can never make one of them set the other; it only
+        /// bites across a joint, where the neighbour really was built to that size.
+        /// </remarks>
+        private static bool SameChannel(DimensionDescriptor a, DimensionDescriptor b)
+        {
+            if ((a.Link & b.Link) == 0) return false;
+            if (string.Equals(a.Channel, b.Channel, StringComparison.Ordinal)) return true;
+            return RoundTheSameAxis(a.Channel) && RoundTheSameAxis(b.Channel);
+        }
+
+        /// <summary>Whether a channel describes a circle about the stack axis.</summary>
+        /// <param name="channel">The channel's name.</param>
+        private static bool RoundTheSameAxis(string channel) =>
+            string.Equals(channel, Channels.Outer, StringComparison.Ordinal)
+            || string.Equals(channel, Channels.Inner, StringComparison.Ordinal);
 
         /// <summary>
         /// The far end of a part. A dimension covering both ends has no far end, so
