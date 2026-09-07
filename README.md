@@ -359,11 +359,16 @@ Releasing, in order:
    `GameData/DimensionSync/changelog.cfg`. The second is what Kerbal Changelog
    shows in game; the two are maintained by hand and drift silently if only one
    is updated.
-3. `dotnet build src/DimensionSync.csproj`, which assembles the whole releasable
-   folder under `GameData/DimensionSync` - the DLL into `Plugins/`, and the
-   licence, readme and changelog copied up from the repository root.
-4. The full suite, green.
-5. A git tag, and a GitHub release whose zip contains the `GameData` folder.
+3. Both suites, green: `dotnet test test/DimensionSync.Tests` and
+   `test/integration/run_game_tests.sh`.
+4. `./make-release.sh`, which builds, checks the release against itself, and
+   writes `dist/DimensionSync-<version>.zip`. It refuses on an unclean working
+   tree, on the version disagreeing between the three places it appears, on a
+   missing changelog entry in either file, on a shipped config that does not
+   match the defaults this readme documents, and on a doc the build did not
+   copy. Each of those is a mistake that has been made here or come within one
+   step of shipping, and none of them fail a build.
+5. A git tag, and a GitHub release carrying that zip.
 
 The `.version` file and `NetKAN/DimensionSync.netkan` between them let KSP-AVC
 and CKAN pick the release up without further work. `release_status` in the netkan

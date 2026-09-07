@@ -103,3 +103,6 @@ __pycache__/
 # project and its three project files are written by hand. Without this the mod
 # and both test projects have no build files at all in a fresh clone.
 !*.csproj
+
+# Release artifacts, rebuilt by make-release.sh
+/dist/
