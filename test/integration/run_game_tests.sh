@@ -84,6 +84,21 @@ sed -i 's/^\(\s*\)debug = false/\1debug = true/' "$ksp/GameData/DimensionSync/Di
 
 rm -f "$results" "$ksp/KSP.log"
 
+# The settings window writes PluginData/Settings.cfg, and the mod overlays it on
+# top of the shipped config at load - which is right for a player and wrong for a
+# run that is supposed to be testing the shipped defaults. Nothing here refreshes
+# it the way DimensionSync.cfg is refreshed above, so one manual session in this
+# install silently rewrites the rules for every automated run afterwards. That has
+# already happened: somebody turned the four wing behaviours off while trying the
+# settings window, and the next suite failed 28 wing scenarios against unchanged
+# code. Moved rather than deleted, because a human uses this install too.
+player_settings="$ksp/GameData/DimensionSync/PluginData/Settings.cfg"
+if [[ -f "$player_settings" ]]; then
+    mv -f "$player_settings" "$player_settings.set-aside"
+    echo "==> set aside a PluginData/Settings.cfg that would have overridden the shipped config"
+    echo "    (kept at ${player_settings}.set-aside; only the most recent one is kept)"
+fi
+
 # KSP eats PartDatabase.cfg while loading and only rewrites it on a clean exit.
 # Without it every part's drag cubes get re-rendered, which on software GL turns
 # a 40-second startup into ten minutes.
