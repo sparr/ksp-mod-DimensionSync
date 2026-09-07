@@ -81,6 +81,22 @@ while IFS='|' read -r _ key value _; do
         || fail "readme documents $key = $value, which is not what DimensionSync.cfg ships"
 done < <(sed -n '/^| `debug`/,/^$/p' README.md)
 
+# --- 5b. the update URL points at a branch that exists --------------------
+# KSP-AVC and CKAN both read this URL to find out whether an update exists, and
+# it is the one field in the .version file the build does NOT rewrite, so it
+# keeps whatever it was given. It said "master" while the only branch was
+# "main": reachable through GitHub's alias, and reported 404 by CKAN's own
+# inflater, which is a good reminder that a machine-read URL should not depend
+# on an alias resolving.
+avc_url="$(grep -oP '(?<="URL": ")[^"]+' "$mod/DimensionSync.version" || true)"
+if [[ -n "$avc_url" ]]; then
+    avc_branch="$(sed -E 's#.*githubusercontent\.com/[^/]+/[^/]+/([^/]+)/.*#\1#' <<<"$avc_url")"
+    if [[ -n "$avc_branch" && "$avc_branch" != "$avc_url" ]]; then
+        git rev-parse --verify --quiet "refs/heads/$avc_branch" >/dev/null \
+            || fail "the .version URL points at branch '$avc_branch', which does not exist here"
+    fi
+fi
+
 # --- 6. the build actually copied the docs --------------------------------
 # SkipUnchangedFiles means a copy that quietly did not happen leaves the last
 # release's readme in the folder, which is not visible in the build output.
